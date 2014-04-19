@@ -578,6 +578,12 @@ void run_code_event(struct state *state, struct event *event,
 	/* Wait for the right time before firing off this event. */
 	wait_for_event(state);
 
+	//TODO modify to support multi socket support
+	/*
+	 * Idea: extend event struct to put a socked_fd and get this fd from
+	 * the script (thus specified by user)?
+	 *
+	 */
 	if (state->socket_under_test == NULL) {
 		asprintf(&error, "no socket to use for code");
 		goto error_out;

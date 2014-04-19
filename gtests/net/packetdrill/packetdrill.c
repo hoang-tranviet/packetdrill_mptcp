@@ -65,6 +65,7 @@ int main(int argc, char *argv[])
 {
 	struct config config;
 	set_default_config(&config);
+
 	/* Get command line options and list of test scripts. */
 	char **arg = parse_command_line_options(argc, argv, &config);
 

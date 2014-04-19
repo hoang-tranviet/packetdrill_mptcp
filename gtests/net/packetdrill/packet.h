@@ -72,6 +72,7 @@ struct packet {
 	u32 l2_header_bytes;	/* bytes in outer hardware/layer-2 header */
 	u32 ip_bytes;		/* bytes in outermost IP hdrs/payload */
 	enum direction_t direction;	/* direction packet is traveling */
+	int socket_script_fd; /* script fd of socket used /to use to send / receive this packet */
 
 	/* Metadata about all the headers in the packet, including all
 	 * layers of encapsulation, from outer to inner, starting from

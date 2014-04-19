@@ -25,8 +25,8 @@
 #ifndef __TCP_OPTIONS_H__
 #define __TCP_OPTIONS_H__
 
+#include <asm/byteorder.h>
 #include "types.h"
-
 #include "packet.h"
 
 #define MAX_TCP_OPTION_BYTES (MAX_TCP_HEADER_BYTES - (int)sizeof(struct tcp))
@@ -61,6 +61,34 @@ struct sack_block {
 	u32 right;  /* right edge: 1st sequence number just past block */
 };
 
+/* part of mptcp dss option structures */
+struct dack {
+	union {
+		u32 dack4;
+		u64 dack8;
+	};
+}__packed;
+
+struct dsn {
+	union {
+		u32 dsn4;
+		u64 dsn8;
+	};
+	union {
+		struct {
+			u32 ssn; //subflow sequence number
+			u16 dll; //data level length
+		} __packed wo_cs;
+		struct {
+			u32 ssn; //subflow sequence number
+			u16 dll; //data level length
+			u16 checksum;
+		} __packed w_cs;
+	};
+}__packed;
+
+
+
 /* Represents a single TCP option in its wire format. Note that for
  * EOL and NOP options the length and data field are not included in
  * the on-the-wire data. For other options, the length field describes
@@ -92,7 +120,118 @@ struct tcp_option {
 			 */
 			u8 cookie[MAX_TCP_FAST_OPEN_COOKIE_BYTES];
 		} fast_open;
-	} data;
+
+		/*******MPTCP options*********/
+
+		struct {
+			#if defined(__LITTLE_ENDIAN_BITFIELD)
+			u8 version:4;
+			u8 subtype:4;
+			u8 flags;
+			#elif defined(__BIG_ENDIAN_BITFIELD)
+			u8 subtype:4;
+			u8 version:4;
+			u8 flags;
+			#else
+			#error "Adjust your <asm/byteorder.h> defines"
+			#endif
+			union {
+				struct {
+					u64 key;
+				} syn;
+				struct {
+					u64 sender_key;
+					u64 receiver_key;
+				} no_syn;
+			};
+		} __packed mp_capable;
+
+		struct {
+			union {
+				struct {
+					#if defined(__LITTLE_ENDIAN_BITFIELD)
+					__u8    flags:4,
+					subtype:4;
+					#elif defined(__BIG_ENDIAN_BITFIELD)
+					__u8    subtype:4,
+					flags:4;
+					#else
+					#error "Adjust your <asm/byteorder.h> defines"
+					#endif
+					u8 address_id;
+					union {
+						struct {
+							u64 sender_hmac;
+							u32 sender_random_number;
+						} ack;
+						struct {
+							u32 receiver_token;
+							u32 sender_random_number;
+						} no_ack;
+					};
+				} __packed syn;
+				struct {
+					#if defined(__LITTLE_ENDIAN_BITFIELD)
+					__u16    reserved:12, subtype:4;
+					#elif defined(__BIG_ENDIAN_BITFIELD)
+					__u16    subtype:4,	 reserved:12;
+					#else
+					#error "Adjust your <asm/byteorder.h> defines"
+					#endif
+					u32 sender_hmac[5];
+				} __packed no_syn;
+			}; 
+		} __packed mp_join;
+
+		struct {
+
+			#if defined(__LITTLE_ENDIAN_BITFIELD)
+			__u8    reserved_first_bits:4, subtype:4;
+			__u8 	flag_A:1, // Data ACK present
+					flag_a:1, // Data ACK is 8 octets (if not set,4 octets)
+					flag_M:1, // DSN, SSN, DLL, CHCK is set
+					flag_m:1, // Data sequence number is 8 octets (4 otherwie)
+					flag_F:1, // Data Fin is present
+					reserved_last_bits:3;
+			#elif defined(__BIG_ENDIAN_BITFIELD)
+			__u8    subtype:4, reserved_first_bits:4;
+			__u8	reserved_last_bits:3,
+			//flags: 5;
+					flag_F:1, // Data Fin is present
+					flag_m:1, // Data sequence number is 8 octets (4 otherwie)
+					flag_M:1, // DSN, SSN, DLL, CHCK is set
+					flag_a:1, // Data ACK is 8 octets (if not set,4 octets)
+					flag_A:1; // Data ACK present
+			#else
+			#error "Adjust your <asm/byteorder.h> defines"
+			#endif
+
+			/*		Data Sequence Signal (DSS) Option
+							1               2                3
+			0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+			+---------------+---------------+-------+----------------------+
+			|     Kind      |    Length     |Subtype| (reserved) |F|m|M|a|A|
+			+---------------+---------------+-------+----------------------+
+			|           Data ACK (4 or 8 octets, depending on flags)       |
+			+--------------------------------------------------------------+
+			|   Data sequence number (4 or 8 octets, depending on flags)   |
+			+--------------------------------------------------------------+
+			|              Subflow Sequence Number (4 octets)              |
+			+-------------------------------+------------------------------+
+			|  Data-Level Length (2 octets) |      Checksum (2 octets)     |
+			+-------------------------------+------------------------------+
+			*/
+			union {
+				struct dack dack;
+				struct dsn dsn;
+				struct dack_dsn {
+					struct dack dack;
+					struct dsn dsn;
+				}__packed dack_dsn;
+			};
+		} __packed dss;
+		/*******END MPTCP options*********/
+	} __packed data;
 } __packed tcp_option;
 
 /* Allocate a new options list. */

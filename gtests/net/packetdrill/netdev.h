@@ -80,6 +80,11 @@ static inline int netdev_receive(struct netdev *netdev,
 {
 	return netdev->ops->receive(netdev, packet, error);
 }
+int netdev_receive_loop(struct packet_socket *psock,
+			enum packet_layer_t layer,
+			enum direction_t direction,
+			struct packet **packet,
+			char **error);
 
 
 /* Keep sniffing packets leaving the kernel until we see one we know

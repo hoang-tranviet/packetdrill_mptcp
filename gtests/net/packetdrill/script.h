@@ -164,6 +164,16 @@ enum event_time_t {
 	NUM_TIME_TYPES,
 };
 
+/*
+ * Save variables used in script.
+ * These variables are going to be resolved in run_packet.c
+ * at injecting and receiving packets times.
+ */
+/*struct mp_cap_key_var{
+	char key_var_a[50];
+	char key_var_b[50];
+};*/
+
 /* An event in a script */
 struct event {
 	int line_number;	/* location in test script file */

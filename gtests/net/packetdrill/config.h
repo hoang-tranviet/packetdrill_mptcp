@@ -40,6 +40,11 @@
 
 extern struct option options[];
 
+struct ports {
+	unsigned live_local;
+	unsigned live_remote;
+};
+
 struct config {
 	const char **argv;			/* a copy of process argv */
 
@@ -47,8 +52,11 @@ struct config {
 	int socket_domain;			/* AF_INET or AF_INET6 */
 	int wire_protocol;			/* AF_INET or AF_INET6 */
 
-	u16 live_bind_port;			/* local port for bind() */
-	u16 live_connect_port;			/* remote port for connect() */
+	//Mapping between script fd and ports, used to find mapping between
+	//socket specified in script and socket created afterward by packetdrill.
+	struct ports sock_fd_ports[255];
+	u16 default_live_bind_port;			/* default local port for bind() */
+	u16 default_live_connect_port;			/* remote port for connect() */
 
 	struct ip_address live_bind_ip;		/* address for bind() */
 	struct ip_address live_connect_ip;	/* address for connect() */

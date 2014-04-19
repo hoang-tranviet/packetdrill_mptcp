@@ -194,8 +194,8 @@ void set_default_config(struct config *config)
 	config->code_format		= "python";
 	config->code_sockopt		= "";		/* auto-detect */
 	config->ip_version		= IP_VERSION_4;
-	config->live_bind_port		= 8080;
-	config->live_connect_port	= 8080;
+	config->default_live_bind_port	= 8080;
+	config->default_live_connect_port	= 8080;
 	config->tolerance_usecs		= 4000;
 	config->speed			= TUN_DRIVER_SPEED_CUR;
 	config->mtu			= TUN_DRIVER_DEFAULT_MTU;
@@ -366,7 +366,7 @@ static void process_option(int opt, char *optarg, struct config *config,
 		port = atoi(optarg);
 		if ((port <= 0) || (port > 0xffff))
 			die("%s: bad --bind_port: %s\n", where, optarg);
-		config->live_bind_port = port;
+		config->default_live_bind_port = port;
 		break;
 	case OPT_CODE_COMMAND:
 		config->code_command_line = optarg;
@@ -381,7 +381,7 @@ static void process_option(int opt, char *optarg, struct config *config,
 		port = atoi(optarg);
 		if ((port <= 0) || (port > 0xffff))
 			die("%s: bad --connect_port: %s\n", where, optarg);
-		config->live_connect_port = port;
+		config->default_live_connect_port = port;
 		break;
 	case OPT_REMOTE_IP:
 		strncpy(config->live_remote_ip_string, optarg, ADDR_STR_LEN-1);

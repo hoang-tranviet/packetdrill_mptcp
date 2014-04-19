@@ -36,10 +36,11 @@
  * STATUS_OK on success; on failure returns STATUS_ERR and sets
  * error message.
  */
-static int get_expected_tcp_option_length(u8 kind, u8 *expected_length,
+static int get_expected_tcp_option_length(struct tcp_option *opt, u8 *expected_length,
 					  char **error)
 {
-	switch (kind) {
+
+	switch (opt->kind) {
 	case TCPOPT_EOL:
 	case TCPOPT_NOP:
 		*expected_length = 1;  /* no length byte or data */
@@ -61,13 +62,106 @@ static int get_expected_tcp_option_length(u8 kind, u8 *expected_length,
 		*expected_length = TCPOLEN_TIMESTAMP;
 		break;
 
+	case TCPOPT_MPTCP:
+		switch(opt->data.mp_capable.subtype){
+
+		case MP_CAPABLE_SUBTYPE:
+			switch(opt->length){
+			case TCPOLEN_MP_CAPABLE_SYN:
+				*expected_length = TCPOLEN_MP_CAPABLE_SYN;
+				break;
+			case TCPOLEN_MP_CAPABLE:
+				*expected_length = TCPOLEN_MP_CAPABLE;
+				break;
+			default:
+				asprintf(error, "unexpected MPTCP mp_capable length: %u", opt->length);
+				return STATUS_ERR;
+			}
+			break;
+
+		case DSS_SUBTYPE:
+			switch(opt->length){
+			case TCPOLEN_DSS_DACK4:
+				*expected_length = TCPOLEN_DSS_DACK4;
+				break;
+			case TCPOLEN_DSS_DACK8:
+				*expected_length = TCPOLEN_DSS_DACK8;
+				break;
+			case TCPOLEN_DSS_DSN4:
+				*expected_length = TCPOLEN_DSS_DSN4;
+				break;
+			case TCPOLEN_DSS_DSN8:
+				*expected_length = TCPOLEN_DSS_DSN8;
+				break;
+			case TCPOLEN_DSS_DACK4_DSN8:
+				*expected_length = TCPOLEN_DSS_DACK4_DSN8;
+				break;
+			case TCPOLEN_DSS_DACK8_DSN8:
+				*expected_length = TCPOLEN_DSS_DACK8_DSN8;
+				break;
+			case TCPOLEN_DSS_DSN4_WOCS:
+				*expected_length = TCPOLEN_DSS_DSN4_WOCS;
+				break;
+			case TCPOLEN_DSS_DSN8_WOCS: //could also be TCPOLEN_DSS_DACK4_DSN4_WOCS
+				*expected_length = TCPOLEN_DSS_DSN8_WOCS;
+				break;
+			case TCPOLEN_DSS_DACK4_DSN8_WOCS: // could also be TCPOLEN_DSS_DACK8_DSN4_WOCS
+				*expected_length = TCPOLEN_DSS_DACK4_DSN8_WOCS;
+				break;
+			case TCPOLEN_DSS_DACK8_DSN8_WOCS:
+				*expected_length = TCPOLEN_DSS_DACK8_DSN8_WOCS;
+				break;
+			default:
+				asprintf(error, "unexpected MPTCP dss length: %u", opt->length);
+				return STATUS_ERR;
+			}
+			break;
+
+		case MP_JOIN_SUBTYPE:
+			switch(opt->length){
+			case TCPOLEN_MP_JOIN_SYN:
+				*expected_length = TCPOLEN_MP_JOIN_SYN;
+				break;
+			case TCPOLEN_MP_JOIN_SYN_ACK:
+				*expected_length = TCPOLEN_MP_JOIN_SYN_ACK;
+				break;
+			case TCPOLEN_MP_JOIN_ACK:
+				*expected_length = TCPOLEN_MP_JOIN_ACK;
+				break;
+			default:
+				asprintf(error, "unexpected MPTCP mp_join length: %u", opt->length);
+				return STATUS_ERR;
+			}
+			break;
+
+		case ADD_ADDR_SUBTYPE:
+			switch(opt->length){
+			case TCPOLEN_ADD_ADDR:
+				*expected_length = TCPOLEN_ADD_ADDR;
+				break;
+			case TCPOLEN_ADD_ADDR_PORT:
+				*expected_length = TCPOLEN_ADD_ADDR_PORT;
+				break;
+			default:
+				asprintf(error, "unexpected MPTCP add_addr length: %u", opt->length);
+				return STATUS_ERR;
+			}
+			break;
+
+		default:
+			asprintf(error, "unexpected MPTCP subtype: %u", opt->data.mp_capable.subtype);
+			return STATUS_ERR;
+		}
+
+		break;
+
 	case TCPOPT_SACK:
 	case TCPOPT_EXP:
 		*expected_length = 0;	/* variable-length option */
 		break;
 
 	default:
-		asprintf(error, "unexpected TCP option kind: %u", kind);
+		asprintf(error, "unexpected TCP option kind: %u", opt->kind);
 		return STATUS_ERR;
 	}
 	return STATUS_OK;
@@ -80,7 +174,7 @@ static int get_expected_tcp_option_length(u8 kind, u8 *expected_length,
  * failure returns STATUS_ERR and sets error message.
  */
 static int get_tcp_option_length(const u8 *option, const u8 *end,
-				 u8 expected_length, u8 *length, char **error)
+				 u8 *expected_length, u8 *length, char **error)
 {
 	int result = STATUS_ERR;
 	if (option + 1 >= end) {
@@ -97,10 +191,11 @@ static int get_tcp_option_length(const u8 *option, const u8 *end,
 		asprintf(error, "TCP option data extends too far");
 		goto out;
 	}
-	if (expected_length && (*length != expected_length)) {
+
+	if (*expected_length && *length != *expected_length) {
 		asprintf(error,
 			 "bad TCP option length: was %u but expected %u",
-			 *length, expected_length);
+			 *length, *expected_length);
 		goto out;
 	}
 	result = STATUS_OK;
@@ -113,8 +208,9 @@ static struct tcp_option *get_current_option(
 	struct tcp_options_iterator *iter)
 {
 	assert(iter->current_option <= iter->options_end);
-	if (iter->current_option >= iter->options_end)
+	if (iter->current_option >= iter->options_end){
 		iter->current_option = NULL;
+	}
 	return (struct tcp_option *)iter->current_option;
 }
 
@@ -137,10 +233,12 @@ struct tcp_option *tcp_options_next(
 
 	/* Find the length we expect for this kind of option. */
 	u8 length = 0;			/* length of this option in bytes */
-	u8 expected_length = 0;		/* expected length for this kind */
+	u8 expected_length;		/* expected length for this kind */
+	expected_length = 0;
+
 	struct tcp_option *option = (struct tcp_option *)iter->current_option;
 	if (get_expected_tcp_option_length(
-		    option->kind, &expected_length, error))
+		    option, &expected_length, error))
 		goto out;
 
 	/* Calculate and validate the actual length of the option. */
@@ -151,7 +249,7 @@ struct tcp_option *tcp_options_next(
 		/* Parse and validate length byte. */
 		if (get_tcp_option_length(iter->current_option,
 					  iter->options_end,
-					  expected_length, &length, error))
+					  &expected_length, &length, error))
 			goto out;
 	}
 
@@ -164,4 +262,36 @@ struct tcp_option *tcp_options_next(
 out:
 	return NULL;
 
+}
+
+/**
+ * Search for the option of kind "kind" in the packet and return the tcp_option
+ * pointer to this found option, return NULL if not found.
+ *
+ */
+extern struct tcp_option *get_tcp_option(struct packet *packet, u8 kind){
+
+	struct tcp_options_iterator tcp_opt_iter;
+	struct tcp_option *tcp_opt = tcp_options_begin(packet, &tcp_opt_iter);
+
+	while(tcp_opt != NULL && tcp_opt->kind != kind){
+		tcp_opt = tcp_options_next(&tcp_opt_iter, NULL);
+	}
+	return tcp_opt;
+}
+
+/**
+ * Search for the sub option of subtype "subtype" in the packet and return the mptcp_suboption
+ * pointer to this found option, return NULL if not found.
+ *
+ */
+extern struct tcp_option *get_mptcp_option(struct packet *packet, u8 subtype){
+
+	struct tcp_options_iterator tcp_opt_iter;
+	struct tcp_option *tcp_opt = tcp_options_begin(packet, &tcp_opt_iter);
+
+	while(tcp_opt != NULL && tcp_opt->data.mp_capable.subtype!=subtype){
+		tcp_opt = tcp_options_next(&tcp_opt_iter, NULL);
+	}
+	return tcp_opt;
 }

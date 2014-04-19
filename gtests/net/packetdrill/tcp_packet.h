@@ -25,6 +25,8 @@
 #ifndef __TCP_PACKET_H__
 #define __TCP_PACKET_H__
 
+#define SOCKET_FD_NOT_DEFINED -1
+
 #include "types.h"
 
 #include "packet.h"
@@ -35,7 +37,8 @@
  * On success, returns a newly-allocated packet. On failure, returns NULL
  * and fills in *error with an error message.
  */
-extern struct packet *new_tcp_packet(int address_family,
+extern struct packet *new_tcp_packet(int socket_fd,
+					 int address_family,
 				     enum direction_t direction,
 				     enum ip_ecn_t ecn,
 				     const char *flags,
@@ -45,4 +48,5 @@ extern struct packet *new_tcp_packet(int address_family,
 				     s32 window,
 				     const struct tcp_options *tcp_options,
 				     char **error);
+
 #endif /* __TCP_PACKET_H__ */

@@ -21,7 +21,7 @@
 +.1 < . 1:1(0) ack 1001 win 257
 
 // Write 4 data segments.
-+0  write(4, ..., 4000) = 4000
++0 write(4, ..., 4000) = 4000
 +0  > P. 1001:5001(4000) ack 1
 
 // Get 3 SACKs.
@@ -33,3 +33,4 @@
 
 // Receiver ACKs all data.
 +.1 < . 1:1(0) ack 6001 win 257
+

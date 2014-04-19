@@ -663,7 +663,7 @@ static int run_syscall_socket(struct state *state, int address_family,
 	socket->live.fd		= live_fd;
 
 	/* Any later packets in the test script will now be mapped here. */
-	state->socket_under_test = socket;
+	//state->socket_under_test = socket;
 
 	DEBUGP("socket() creating new socket: script_fd: %d live_fd: %d\n",
 	       socket->script.fd, socket->live.fd);
@@ -695,16 +695,22 @@ error_out:
  * Returns STATUS_OK on success; on failure returns STATUS_ERR and
  * sets error message.
  */
+
 static int run_syscall_bind(struct state *state,
 			    struct sockaddr *live_addr,
-			    socklen_t *live_addrlen, char **error)
+			    socklen_t *live_addrlen,
+			    int script_fd,
+			    char **error)
 {
 	DEBUGP("run_syscall_bind\n");
 
+	//TODO check bounds and report clean error
+	int live_bind_port = state->config->sock_fd_ports[script_fd].live_local;
+
 	/* Fill in the live address we want to bind to */
 	ip_to_sockaddr(&state->config->live_bind_ip,
-		       state->config->live_bind_port,
-		       live_addr, live_addrlen);
+		       live_bind_port,
+			   live_addr, live_addrlen);
 
 	return STATUS_OK;
 }
@@ -802,10 +808,9 @@ static int run_syscall_accept(struct state *state,
 	socket->live.remote.ip		= ip;
 	socket->live.remote.port	= port;
 	socket->live.local.ip		= state->config->live_local_ip;
-	socket->live.local.port		= htons(state->config->live_bind_port);
-
 	socket->live.fd			= live_accepted_fd;
 	socket->script.fd		= script_accepted_fd;
+	socket->live.local.port = htons(state->config->sock_fd_ports[socket->script.fd].live_local);
 
 	if (DEBUG_LOGGING) {
 		char local_string[ADDR_STR_LEN];
@@ -835,12 +840,15 @@ static int run_syscall_connect(struct state *state,
 	struct socket *socket	= NULL;
 	DEBUGP("run_syscall_connect\n");
 
+
+
 	/* Fill in the live address we want to connect to */
 	ip_to_sockaddr(&state->config->live_connect_ip,
-		       state->config->live_connect_port,
+		       state->config->default_live_connect_port,
 		       live_addr, live_addrlen);
 
 	socket = find_socket_by_script_fd(state, script_fd);
+
 	assert(socket != NULL);
 	if (socket->state != SOCKET_NEW) {
 		if (must_be_new_socket) {
@@ -857,7 +865,7 @@ static int run_syscall_connect(struct state *state,
 	socket->script.remote.port		= 0;
 	socket->script.local.port		= 0;
 	socket->live.remote.ip   = state->config->live_remote_ip;
-	socket->live.remote.port = htons(state->config->live_connect_port);
+ 	socket->live.remote.port = htons(state->config->default_live_connect_port);
 	DEBUGP("success: setting socket to state %d\n", socket->state);
 	return STATUS_OK;
 }
@@ -901,9 +909,66 @@ static int syscall_socket(struct state *state, struct syscall_spec *syscall,
 	return STATUS_OK;
 }
 
-static int syscall_bind(struct state *state, struct syscall_spec *syscall,
-			struct expression_list *args, char **error)
+/* Return STATUS_OK iff the argument with the given index is a
+ * sockaddr (...).
+ */
+static int sockaddr_arg(struct expression_list *args, int index, char **error)
 {
+	struct expression *expression = get_arg(args, index, error);
+	if (expression == NULL)
+		return STATUS_ERR;
+	if (check_type(expression, EXPR_SOCKET_ADDRESS_IPV4, error)
+			&& check_type(expression, EXPR_SOCKET_ADDRESS_IPV6, error))
+		return STATUS_ERR;
+	return STATUS_OK;
+}
+
+/**
+ * Modify state according to the sockaddr specified by user as bind syscall
+ * parameter. Currently implemented to support more than one socket, but with
+ * at most one interface.
+ */
+static int set_bind_sockaddr_config(struct state *state,
+		struct expression *first_arg,
+		int script_fd)
+{
+
+	//Set destination port for this socket being the one specified
+	//in sockaddr bind paramater (written by user in script)
+	if (first_arg->type == EXPR_SOCKET_ADDRESS_IPV4
+			|| first_arg->type == EXPR_SOCKET_ADDRESS_IPV6){
+
+		struct socket *socket = find_socket_by_script_fd(state, script_fd);
+
+		if(first_arg->type == EXPR_SOCKET_ADDRESS_IPV4){
+			struct sockaddr_in *sockaddr = first_arg->value.socket_address_ipv4;
+			state->config->ip_version = IP_VERSION_4;
+			state->config->sock_fd_ports[socket->script.fd].live_local = sockaddr->sin_port;
+			state->config->live_bind_ip.ip.v4 = sockaddr->sin_addr;
+		}
+
+		else if(first_arg->type == EXPR_SOCKET_ADDRESS_IPV6){
+			struct sockaddr_in6 *sockaddr = first_arg->value.socket_address_ipv6;
+			state->config->ip_version = IP_VERSION_6;
+			state->config->sock_fd_ports[socket->script.fd].live_local = sockaddr->sin6_port;
+			state->config->live_bind_ip.ip.v6 = sockaddr->sin6_addr;
+		}
+		else{
+			return STATUS_ERR;
+		}
+	}
+	//"ellipsis" as arg 1, set a default port value.
+	else{
+		state->config->sock_fd_ports[script_fd].live_local = state->config->default_live_bind_port;
+		state->config->sock_fd_ports[script_fd].live_remote = state->config->default_live_connect_port;
+	}
+	return STATUS_OK;
+}
+
+static int syscall_bind(struct state *state, struct syscall_spec *syscall,
+		struct expression_list *args, char **error)
+{
+
 	int live_fd, script_fd, result;
 	struct sockaddr_storage live_addr;
 	socklen_t live_addrlen;
@@ -914,19 +979,23 @@ static int syscall_bind(struct state *state, struct syscall_spec *syscall,
 		return STATUS_ERR;
 	if (to_live_fd(state, script_fd, &live_fd, error))
 		return STATUS_ERR;
-	if (ellipsis_arg(args, 1, error))
+	if (ellipsis_arg(args, 1, error) && sockaddr_arg(args, 1, error))
 		return STATUS_ERR;
+
+	struct expression *first_arg = get_arg(args, 1, NULL);
+	if(set_bind_sockaddr_config(state, first_arg, script_fd)){
+		return STATUS_ERR;
+	}
+
 	if (ellipsis_arg(args, 2, error))
 		return STATUS_ERR;
 	if (run_syscall_bind(
-		    state,
-		    (struct sockaddr *)&live_addr, &live_addrlen, error))
+			state,
+			(struct sockaddr *)&live_addr, &live_addrlen, script_fd, error))
 		return STATUS_ERR;
 
 	begin_syscall(state, syscall);
-
 	result = bind(live_fd, (struct sockaddr *)&live_addr, live_addrlen);
-
 	return end_syscall(state, syscall, CHECK_EXACT, result, error);
 }
 
@@ -957,12 +1026,46 @@ static int syscall_listen(struct state *state, struct syscall_spec *syscall,
 	return STATUS_OK;
 }
 
+/**
+ * When a new mptcp subflow is established using mp_join mptcp option,
+ * there is no accept system call on the kernel side. However, packetdrill
+ * socket structure still need to be updated.
+ */
+static int mp_join_accept(struct state *state, struct syscall_spec *syscall,
+		struct expression_list *args, char **error){
+
+	int script_fd, script_accepted_fd;
+	struct socket *socket;
+
+	if (check_arg_count(args, 1, error))
+		return STATUS_ERR;
+	if (s32_arg(args, 0, &script_fd, error))
+		return STATUS_ERR;
+	if (get_s32(syscall->result, &script_accepted_fd, error))
+		return STATUS_ERR;
+
+	for (socket = state->sockets; socket != NULL; socket = socket->next) {
+		if ((socket->state == SOCKET_PASSIVE_SYNACK_SENT) ||  /* TFO */
+				(socket->state == SOCKET_PASSIVE_SYNACK_ACKED)) {
+			//assert(is_equal_ip(&socket->live.remote.ip, &ip));
+			//assert(is_equal_port(socket->live.remote.port,
+			//		htons(port)));
+			socket->script.fd	= script_accepted_fd;
+			socket->live.fd		= -1; //no live fd
+			return STATUS_OK;
+		}
+	}
+
+	return STATUS_OK;
+}
+
 static int syscall_accept(struct state *state, struct syscall_spec *syscall,
 			  struct expression_list *args, char **error)
 {
 	int live_fd, script_fd, live_accepted_fd, script_accepted_fd, result;
 	struct sockaddr_storage live_addr;
 	socklen_t live_addrlen = sizeof(live_addr);
+
 	if (check_arg_count(args, 3, error))
 		return STATUS_ERR;
 	if (s32_arg(args, 0, &script_fd, error))
@@ -1713,6 +1816,7 @@ struct system_call_entry system_call_table[] = {
 	{"getsockopt", syscall_getsockopt},
 	{"setsockopt", syscall_setsockopt},
 	{"poll",       syscall_poll},
+	{"mp_join_accept",	mp_join_accept}
 };
 
 /* Evaluate the system call arguments and invoke the system call. */

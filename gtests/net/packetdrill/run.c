@@ -47,6 +47,7 @@
 #include "socket.h"
 #include "system.h"
 #include "tcp.h"
+#include "mptcp.h"
 #include "tcp_options.h"
 
 /* MAX_SPIN_USECS is the maximum amount of time (in microseconds) to
@@ -580,7 +581,7 @@ void run_script(struct config *config, struct script *script)
 		    state->config->script_path, error);
 		free(error);
 	}
-
+	free_mp_state();
 	state_free(state);
 
 	DEBUGP("run_script: done running\n");
@@ -602,6 +603,9 @@ int parse_script_and_set_config(int argc, char *argv[],
 	DEBUGP("parse_and_run_script: %s\n", script_path);
 	assert(script_path != NULL);
 
+	//Initialize MPTCP state
+	init_mp_state();
+
 	init_script(script);
 
 	set_default_config(config);
@@ -613,4 +617,20 @@ int parse_script_and_set_config(int argc, char *argv[],
 		read_script(script_path, script);
 
 	return parse_script(config, script, &invocation);
+}
+
+void print_socket_list(struct state *state)
+{
+	struct socket *sock = state->sockets;
+	printf("---------------------SOCKET LIST ----------------------\n");
+	while(sock){
+		printf("-------------------------------------------\n");
+		printf("Script fd %d, live fd %d\n", sock->script.fd, sock->live.fd);
+		printf("Script ports: local %u, remote %u\n", ntohs(sock->script.local.port),
+				ntohs(sock->script.remote.port));
+		printf("Live ports: local %u, remote %u\n", ntohs(sock->live.local.port),
+				ntohs(sock->live.remote.port));
+		sock = sock->next;
+	}
+	printf("-------------------------------------------\n");
 }

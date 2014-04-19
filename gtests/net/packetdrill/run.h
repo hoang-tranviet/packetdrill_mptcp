@@ -184,4 +184,6 @@ extern void set_scheduling_priority(void);
 /* Try to pin our pages into RAM. */
 extern void lock_memory(void);
 
+extern void print_socket_list(struct state *state);
+
 #endif /* __RUN_H__ */

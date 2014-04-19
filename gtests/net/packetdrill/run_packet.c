@@ -42,6 +42,8 @@
 #include "tcp_options_iterator.h"
 #include "tcp_options_to_string.h"
 #include "tcp_packet.h"
+#include "utils.h"
+#include "mptcp.h"
 
 /* To avoid issues with TIME_WAIT, FIN_WAIT1, and FIN_WAIT2 we use
  * dynamically-chosen, unique 4-tuples for each test. We implement the
@@ -140,19 +142,124 @@ static void verbose_packet_dump(struct state *state, const char *type,
 	}
 }
 
-/* See if the live packet matches the live 4-tuple of the socket under test. */
+/************* Functions to find socket corresponding to a packet ************/
+
+/**
+ * Return the first encountered socket from state->sockets list satisfying the
+ * condition checked by the match function. Elements of the list are checked in
+ * a Queue fashion, state->sockets pointer being the head.
+ *
+ */
+struct socket *find_socket_matching_packet(struct state *state,
+		const struct packet *packet,
+		bool (*match)(struct socket*, const struct packet*))
+{
+	struct socket *socket = state->sockets;
+	while(socket){
+		if((*match)(socket, packet))
+			return socket;
+
+		socket = socket->next;
+	}
+	return NULL;
+}
+
+static bool is_equals_script_fd_socket_and_packet(struct socket *socket,
+		const struct packet *packet)
+{
+	return socket->script.fd == packet->socket_script_fd;
+}
+
+/**
+ * Find the socket in state->sockets list having the file descriptor socket_fd.
+ */
+struct socket *find_socket_matching_packet_script_fd(
+		struct state *state,
+		const struct packet *packet)
+{
+
+	if(packet->socket_script_fd == SOCKET_FD_NOT_DEFINED) // in scipt test is not specified
+		return state->sockets;
+	return find_socket_matching_packet(state, packet,
+			is_equals_script_fd_socket_and_packet);
+}
+
+/**
+ * Return first encountered socket found having its script fd equals -1.
+ * Socket is in this state while establishing tcp connection
+ * (three-way hanshake).
+ *
+ */
+struct socket *find_connecting_socket(struct state *state)
+{
+	struct socket *socket = state->sockets;
+	while(socket){
+		if(socket->script.fd == SOCKET_FD_NOT_DEFINED){
+			return socket;
+		}
+		socket = socket->next;
+	}
+	return NULL;
+}
+
+static bool is_equals_tuple_socket_and_packet(struct socket *socket,
+		const struct packet *packet)
+{
+	//TODO check all 5-tuple ([IP,port] dst/src & protocol), will be
+	//necessary when multiple interface support will be implemented
+	return is_equal_port(socket->live.local.port, packet->tcp->src_port) &&
+		   is_equal_port(socket->live.remote.port, packet->tcp->dst_port);
+}
+
+struct socket *find_socket_matching_packet_tuple(struct state *state,
+		const struct packet *packet)
+{
+	return find_socket_matching_packet(state, packet, is_equals_tuple_socket_and_packet);
+}
+
+static bool is_equals_tuple_socket_and_packet_reversed_ports(struct socket *socket,
+		const struct packet *packet)
+{
+	//TODO check IP too, will be necessary when multiple interface support
+	//will be implemented.
+	return is_equal_port(socket->live.local.port, packet->tcp->dst_port) &&
+			is_equal_port(socket->live.remote.port, packet->tcp->src_port);
+}
+
+struct socket *find_socket_matching_packet_tuple_reversed_ports(struct state *state,
+		const struct packet *packet)
+{
+	return find_socket_matching_packet(state, packet, is_equals_tuple_socket_and_packet_reversed_ports);
+}
+
+static bool socket_remote_port_equals_packet_dst_port(struct socket *socket,
+		const struct packet *packet)
+{
+	return is_equal_port(socket->live.remote.port, packet->tcp->dst_port);
+}
+
+struct socket *find_corresponding_socket_remote_port(struct state *state,
+		struct packet *packet)
+{
+	return find_socket_matching_packet(state, packet, socket_remote_port_equals_packet_dst_port);
+}
+
+/************************************* END ***********************************/
+
+/* See if the live packet matches the live 4-tuple of the socket under t
+ * est. */
 static struct socket *find_socket_for_live_packet(
 	struct state *state, const struct packet *packet,
 	enum direction_t *direction)
 {
-	struct socket *socket = state->socket_under_test;	/* shortcut */
+	struct socket *socket = find_socket_matching_packet_tuple(state, packet);
 	if (socket == NULL)
 		return NULL;
 
 	struct tuple packet_tuple, live_outbound, live_inbound;
 	get_packet_tuple(packet, &packet_tuple);
 
-	/* Is packet inbound to the socket under test? */
+	// Is packet inbound to the socket under test?
 	socket_get_inbound(&socket->live, &live_inbound);
 	if (is_equal_tuple(&packet_tuple, &live_inbound)) {
 		*direction = DIRECTION_INBOUND;
@@ -160,8 +267,10 @@ static struct socket *find_socket_for_live_packet(
 		       socket->state);
 		return socket;
 	}
-	/* Is packet outbound from the socket under test? */
+
+	// Is packet outbound from the socket under test?
 	socket_get_outbound(&socket->live, &live_outbound);
+
 	if (is_equal_tuple(&packet_tuple, &live_outbound)) {
 		*direction = DIRECTION_OUTBOUND;
 		DEBUGP("outbound live packet, socket in state %d\n",
@@ -180,14 +289,14 @@ static struct socket *handle_listen_for_script_packet(
 	struct state *state, const struct packet *packet,
 	enum direction_t direction)
 {
-	/* Does this packet match this socket? For now we only support
-	 * testing one socket at a time, so we merely check whether
-	 * the socket is listening. (If we were to support testing
-	 * more than one socket at a time then we'd want to check to
-	 * see if the address tuples in the packet and socket match.)
-	 */
+
 	struct config *config = state->config;
-	struct socket *socket = state->socket_under_test;	/* shortcut */
+
+	//Search for a socket establishing a tcp connection
+	struct socket *socket = find_connecting_socket(state);
+
+	if(!socket)
+		socket = find_socket_matching_packet_script_fd(state, packet);
 
 	bool match = (direction == DIRECTION_INBOUND);
 	if (!match)
@@ -203,6 +312,7 @@ static struct socket *handle_listen_for_script_packet(
 		match = ((socket != NULL) &&
 			 (socket->state == SOCKET_PASSIVE_LISTENING));
 	}
+
 	if (!match)
 		return NULL;
 
@@ -210,8 +320,9 @@ static struct socket *handle_listen_for_script_packet(
 	 * Any further packets in the test script will be directed to
 	 * this child socket.
 	 */
+	int socket_script_fd = socket->script.fd;
 	socket = socket_new(state);
-	state->socket_under_test = socket;
+	//state->socket_under_test = socket;
 	assert(socket->state == SOCKET_INIT);
 	socket->state = SOCKET_PASSIVE_PACKET_RECEIVED;
 	socket->address_family = packet_address_family(packet);
@@ -229,9 +340,10 @@ static struct socket *handle_listen_for_script_packet(
 	 * on the script packet and our overall config.
 	 */
 	socket->live.remote.ip		= config->live_remote_ip;
-	socket->live.remote.port	= htons(next_ephemeral_port(state));
+	int next_port = next_ephemeral_port(state);
+	socket->live.remote.port	= htons(next_port);
 	socket->live.local.ip		= config->live_local_ip;
-	socket->live.local.port		= htons(config->live_bind_port);
+	socket->live.local.port = htons(state->config->sock_fd_ports[socket_script_fd].live_local);
 	socket->live.remote_isn		= ntohl(packet->tcp->seq);
 	socket->live.fd			= -1;
 
@@ -258,17 +370,17 @@ static struct socket *handle_connect_for_script_packet(
 	struct state *state, const struct packet *packet,
 	enum direction_t direction)
 {
-	/* Does this packet match this socket? For now we only support
-	 * testing one socket at a time, so we merely check whether
-	 * the socket is connecting. (If we were to support testing
-	 * more than one socket at a time then we'd want to check to
-	 * see if the address tuples in the packet and socket match.)
-	 */
+	/* Does this packet match this socket? */
 	struct config *config = state->config;
-	struct socket *socket = state->socket_under_test;	/* shortcut */
+	//Search for a socket establishing a tcp connection
+	struct socket *socket = find_connecting_socket(state);
+
+	if(!socket)
+		socket = find_socket_matching_packet_script_fd(state, packet);
 
 	bool match = ((direction == DIRECTION_OUTBOUND) &&
-		      packet->tcp->syn && !packet->tcp->ack);
+			packet->tcp->syn && !packet->tcp->ack);
+
 	if (!match)
 		return NULL;
 
@@ -295,11 +407,9 @@ static struct socket *handle_connect_for_script_packet(
 		assert(socket->state == SOCKET_INIT);
 		socket->address_family = packet_address_family(packet);
 		socket->protocol = packet_ip_protocol(packet);
-
-		socket->script.fd	 = -1;
-
 		socket->live.remote.ip   = config->live_remote_ip;
-		socket->live.remote.port = htons(config->live_connect_port);
+		//socket->live.remote.port = htons(config->default_live_connect_port);
+		socket->live.remote.port = htons(config->sock_fd_ports[packet->socket_script_fd].live_remote);
 		socket->live.fd		 = -1;
 	}
 
@@ -311,6 +421,7 @@ static struct socket *handle_connect_for_script_packet(
 	socket->script.local		= tuple.src;
 	socket->script.local_isn	= ntohl(packet->tcp->seq);
 
+	state->socket_under_test = socket;
 	return socket;
 }
 
@@ -323,7 +434,9 @@ static struct socket *find_connect_for_live_packet(
 	get_packet_tuple(packet, &tuple);
 
 	*direction = DIRECTION_INVALID;
-	struct socket *socket = state->socket_under_test;	/* shortcut */
+
+	struct socket *socket = find_corresponding_socket_remote_port(state, packet);
+
 	if (!socket)
 		return NULL;
 
@@ -418,8 +531,10 @@ static int offset_sack_blocks(struct packet *packet,
 		if (option->kind == TCPOPT_SACK) {
 			int num_blocks = 0;
 			if (num_sack_blocks(option->length,
-						    &num_blocks, error))
+						    &num_blocks, error)){
 				return STATUS_ERR;
+			}
+			
 			int i = 0;
 			for (i = 0; i < num_blocks; ++i) {
 				u32 val;
@@ -476,15 +591,15 @@ static int map_inbound_icmp_packet(
  * on failure returns STATUS_ERR and sets error message.
  */
 static int map_inbound_packet(
-	struct socket *socket, struct packet *live_packet, char **error)
+	struct socket *socket,
+	struct packet *live_packet,
+	char **error)
 {
 	DEBUGP("map_inbound_packet\n");
-
 	/* Remap packet to live values. */
 	struct tuple live_inbound;
 	socket_get_inbound(&socket->live, &live_inbound);
 	set_packet_tuple(live_packet, &live_inbound);
-
 	if ((live_packet->icmpv4 != NULL) || (live_packet->icmpv6 != NULL))
 		return map_inbound_icmp_packet(socket, live_packet, error);
 
@@ -505,12 +620,11 @@ static int map_inbound_packet(
 			htonl(ntohl(live_packet->tcp->ack_seq) + ack_offset);
 	if (offset_sack_blocks(live_packet, ack_offset, error))
 		return STATUS_ERR;
-
 	/* Find the timestamp echo reply is, so we can remap that below. */
 	if (find_tcp_timestamp(live_packet, error))
 		return STATUS_ERR;
 
-	/* Remap TCP timestamp echo reply from script value to a live
+	/* Remap TCP timestamp echo reply from script value to MPa live
 	 * value. We say "a" rather than "the" live value because
 	 * there could be multiple live values corresponding to the
 	 * same script value if a live test replay flips to a new
@@ -530,7 +644,9 @@ static int map_inbound_packet(
 		packet_set_tcp_ts_ecr(live_packet, live_ts_ecr);
 	}
 
-	return STATUS_OK;
+	return mptcp_insert_and_extract_opt_fields(live_packet,
+			live_packet,
+			DIRECTION_INBOUND);
 }
 
 /* Transforms values in the 'actual_packet' by mapping outbound packet
@@ -558,6 +674,7 @@ static int map_outbound_live_packet(
 	/* Rewrite 4-tuple to be outbound script values. */
 	socket_get_outbound(&socket->script, &script_outbound);
 	set_packet_tuple(actual_packet, &script_outbound);
+
 
 	/* If no TCP headers to rewrite, then we're done. */
 	if (live_packet->tcp == NULL)
@@ -609,6 +726,9 @@ static int map_outbound_live_packet(
 				       socket->first_actual_ts_val));
 	}
 
+	mptcp_insert_and_extract_opt_fields(script_packet,
+			live_packet,
+			DIRECTION_OUTBOUND);
 	return STATUS_OK;
 }
 
@@ -944,16 +1064,170 @@ static int verify_outbound_live_headers(
 
 	return STATUS_OK;
 }
+/* Check if mptcp options are identical (in values), actual opt, script opt */
+bool same_mptcp_opt(struct tcp_option *opt_a, struct tcp_option *opt_b, struct packet *packet_a){
 
-/* Return true iff the TCP options for the packets are bytewise identical. */
+	switch(opt_a->data.mp_capable.subtype){
+
+		case MP_CAPABLE_SUBTYPE:
+			if(opt_a->data.mp_capable.flags != opt_b->data.mp_capable.flags)
+				return false;
+			if(opt_a->length == TCPOLEN_MP_CAPABLE_SYN){
+				if(opt_a->data.mp_capable.syn.key != opt_b->data.mp_capable.syn.key){
+					printf("977: Les cles syn sont diff\n");
+					return false;
+				}
+			}else if(opt_a->length == TCPOLEN_MP_CAPABLE){
+				if(opt_a->data.mp_capable.no_syn.receiver_key != opt_b->data.mp_capable.no_syn.receiver_key ||
+						opt_a->data.mp_capable.no_syn.sender_key != opt_b->data.mp_capable.no_syn.sender_key){
+					printf("981: Les cles syn/ack sont diff\n");
+					return false;
+				}
+			}
+			break;
+		case MP_JOIN_SUBTYPE:
+			if(opt_a->length == TCPOLEN_MP_JOIN_SYN && !packet_a->tcp->ack && packet_a->tcp->syn){
+				if(opt_a->data.mp_join.syn.address_id != opt_b->data.mp_join.syn.address_id ||
+						opt_a->data.mp_join.syn.flags != opt_b->data.mp_join.syn.flags)
+					return false;
+				if(opt_a->data.mp_join.syn.no_ack.receiver_token != opt_b->data.mp_join.syn.no_ack.receiver_token||
+					opt_a->data.mp_join.syn.no_ack.sender_random_number != opt_b->data.mp_join.syn.no_ack.sender_random_number)
+					return false;
+			}else if(opt_a->length == TCPOLEN_MP_JOIN_SYN_ACK && packet_a->tcp->ack && packet_a->tcp->syn){
+				if(opt_a->data.mp_join.syn.address_id != opt_b->data.mp_join.syn.address_id ||
+					opt_a->data.mp_join.syn.flags != opt_b->data.mp_join.syn.flags)
+					return false;
+				if(opt_a->data.mp_join.syn.ack.sender_hmac != opt_b->data.mp_join.syn.ack.sender_hmac ||
+					opt_a->data.mp_join.syn.ack.sender_random_number != opt_b->data.mp_join.syn.ack.sender_random_number)
+					return false;
+			}else if(opt_a->length == TCPOLEN_MP_JOIN_ACK && packet_a->tcp->ack && !packet_a->tcp->syn){
+				if(opt_a->data.mp_join.no_syn.sender_hmac != opt_b->data.mp_join.no_syn.sender_hmac)
+					return false;
+			}
+			break;
+		case DSS_SUBTYPE:
+			if(opt_a->data.dss.flag_M != opt_b->data.dss.flag_M ||
+				opt_a->data.dss.flag_m != opt_b->data.dss.flag_m ||
+				opt_a->data.dss.flag_A != opt_b->data.dss.flag_A ||
+				opt_a->data.dss.flag_a != opt_b->data.dss.flag_a ||
+				opt_a->data.dss.flag_F != opt_b->data.dss.flag_F )
+				return false;
+
+			if(opt_a->data.dss.flag_M && opt_a->data.dss.flag_A){
+				struct dsn *dsn_live 	= (struct dsn*)((u32*)opt_a+2);
+				struct dsn *dsn_script 	= (struct dsn*)((u32*)opt_b+2);
+				if(!opt_a->data.dss.flag_m && !opt_a->data.dss.flag_a){ // DSN4, DACK4
+					dsn_live 	= (struct dsn*)((u32*)opt_a+2);
+					dsn_script 	= (struct dsn*)((u32*)opt_b+2);
+					if(opt_a->data.dss.dack_dsn.dack.dack4 != opt_b->data.dss.dack_dsn.dack.dack4 ||
+							dsn_live->dsn4 != dsn_script->dsn4)
+						return false;
+				}else if(!opt_a->data.dss.flag_m && opt_a->data.dss.flag_a){ // DSN4, DACK8
+					dsn_live 	= (struct dsn*)((u32*)opt_a+3);
+					dsn_script 	= (struct dsn*)((u32*)opt_b+3);
+					if(	opt_a->data.dss.dack_dsn.dack.dack8 != opt_b->data.dss.dack_dsn.dack.dack8 ||
+							dsn_live->dsn4 != dsn_script->dsn4)
+						return false;
+				}else if(opt_a->data.dss.flag_m && !opt_a->data.dss.flag_a){ // DSN8, DACK4
+					dsn_live 	= (struct dsn*)((u32*)opt_a+2);
+					dsn_script 	= (struct dsn*)((u32*)opt_b+2);
+					if(opt_a->data.dss.dack_dsn.dack.dack4 != opt_b->data.dss.dack_dsn.dack.dack4 ||
+							dsn_live->dsn8 != dsn_script->dsn8)
+						return false;
+				}else if(opt_a->data.dss.flag_m && opt_a->data.dss.flag_a){ // DSN8, DACK8
+					dsn_live 	= (struct dsn*)((u32*)opt_a+3);
+					dsn_script 	= (struct dsn*)((u32*)opt_b+3);
+					if(opt_a->data.dss.dack_dsn.dack.dack8 != opt_b->data.dss.dack_dsn.dack.dack8 ||
+							dsn_live->dsn8 != dsn_script->dsn8)
+						return false;
+				}
+				u32* ssn_live = (u32*)dsn_live+1;
+				u32* ssn_script = (u32*)dsn_script+1;
+				if(*ssn_live != *ssn_script || *(ssn_live+1) != *(ssn_script+1))
+					return false;
+
+			}else if(opt_a->data.dss.flag_M){
+				struct dsn *dsn_live 	= (struct dsn*)((u32*)opt_a+1);
+				struct dsn *dsn_script 	= (struct dsn*)((u32*)opt_b+1);
+				if(!opt_a->data.dss.flag_m){ // DSN4
+					if(dsn_live->dsn4 != dsn_script->dsn4 )
+						return false;
+				}else if(dsn_live->dsn8 != dsn_script->dsn8)
+					return false;
+
+				u32* ssn_live = (u32*)dsn_live+1;
+				u32* ssn_script = (u32*)dsn_script+1;
+				if(*ssn_live != *ssn_script || *(ssn_live+1) != *(ssn_script+1))
+					return false;
+			}else if(opt_a->data.dss.flag_A){
+				if(!opt_a->data.dss.flag_a){
+					if(opt_a->data.dss.dack.dack4 != opt_b->data.dss.dack.dack4 ){
+						printf("1065: dack4 differents\n");
+						return false;
+					}
+				}else{
+					if(opt_a->data.dss.dack.dack8 != opt_b->data.dss.dack.dack8 )
+						return false;
+				}
+			}
+			break;
+		default:
+			return false;
+	}
+	return true;
+}
+/* Check if tcp options are identical (memcmp) */
 static bool same_tcp_options(struct packet *packet_a,
-			     struct packet *packet_b)
+		struct packet *packet_b)
 {
-	return ((packet_tcp_options_len(packet_a) ==
-		 packet_tcp_options_len(packet_b)) &&
-		(memcmp(packet_tcp_options(packet_a),
-			packet_tcp_options(packet_b),
-			packet_tcp_options_len(packet_a)) == 0));
+
+	if(packet_tcp_options_len(packet_a) !=
+			packet_tcp_options_len(packet_b)){
+		return false;
+	}
+
+	struct tcp_options_iterator iter_a, iter_b;
+	struct tcp_option *opt_a = tcp_options_begin(packet_a, &iter_a);
+	struct tcp_option *opt_b = tcp_options_begin(packet_b, &iter_b);
+
+	//No assumption about options order
+	while(opt_a != NULL){
+
+		while(opt_b != NULL && opt_a->kind != opt_b->kind){
+			opt_b = tcp_options_next(&iter_b, NULL);
+		}
+
+		//opt_a not found in packet_b
+		if(opt_b == NULL){
+			return false;
+		}
+		// loop on subtypes of mptcp, to compare the right option
+		if(opt_a->kind == TCPOPT_MPTCP){
+			while(opt_b != NULL && opt_a->data.mp_capable.subtype!=opt_b->data.mp_capable.subtype){
+				opt_b = tcp_options_next(&iter_b, NULL);
+			}
+			//sub-option opt_a not found in packet_b
+			if(opt_b == NULL){
+				return false;
+			}
+		}
+
+
+		//NOP option only contains a kind field (not length)
+		if(opt_a->kind != TCPOPT_NOP){
+			if(opt_a->length != opt_b->length)
+				return false;
+
+			if(opt_a->kind == TCPOPT_MPTCP){
+				if(!same_mptcp_opt(opt_a, opt_b, packet_a))
+					return false;
+			}
+		}
+
+		opt_b = tcp_options_begin(packet_b, &iter_b);
+		opt_a = tcp_options_next(&iter_a, NULL);
+	}
+	return true;
 }
 
 /* Verify that the TCP option values matched expected values. */
@@ -961,7 +1235,7 @@ static int verify_outbound_live_tcp_options(
 	struct config *config,
 	struct packet *actual_packet,
 	struct packet *script_packet, char **error)
-{
+{	
 	/* See if we should validate TCP options at all. */
 	if (script_packet->flags & FLAG_OPTIONS_NOCHECK)
 		return STATUS_OK;
@@ -975,7 +1249,7 @@ static int verify_outbound_live_tcp_options(
 	    actual_packet->tcp_ts_val != NULL) {
 		u32 script_ts_val = packet_tcp_ts_val(script_packet);
 		u32 actual_ts_val = packet_tcp_ts_val(actual_packet);
-
+		
 		/* See if the deviation from the script TS val is
 		 * within our configured tolerance.
 		 */
@@ -997,8 +1271,9 @@ static int verify_outbound_live_tcp_options(
 		packet_set_tcp_ts_val(actual_packet, actual_ts_val);
 		if (is_same)
 			return STATUS_OK;
+	
 	}
-
+	
 	asprintf(error, "bad outbound TCP options");
 	return STATUS_ERR;	/* The TCP options did not match */
 }
@@ -1116,14 +1391,19 @@ static int sniff_outbound_live_packet(
 	struct socket *socket = NULL;
 	enum direction_t direction = DIRECTION_INVALID;
 	assert(*packet == NULL);
+
 	while (1) {
+
 		if (netdev_receive(state->netdev, packet, error))
 			return STATUS_ERR;
+//		(*packet)->tcp->src_port= expected_socket->live.local.port;
+//		(*packet)->tcp->dst_port= expected_socket->live.remote.port;
 		/* See if the packet matches an existing, known socket. */
-		socket = find_socket_for_live_packet(state, *packet,
-						     &direction);
+		socket = find_socket_for_live_packet(state, *packet, &direction);
+
 		if ((socket != NULL) && (direction == DIRECTION_OUTBOUND))
 			break;
+
 		/* See if the packet matches a recent connect() call. */
 		socket = find_connect_for_live_packet(state, *packet,
 						      &direction);
@@ -1138,9 +1418,11 @@ static int sniff_outbound_live_packet(
 	assert(direction == DIRECTION_OUTBOUND);
 
 	if (socket != expected_socket) {
-		asprintf(error, "packet is not for expected socket");
+		asprintf(error, "socket is not respected on this packet");
+
 		return STATUS_ERR;
 	}
+
 	return STATUS_OK;
 }
 
@@ -1176,20 +1458,39 @@ static int find_or_create_socket_for_script_packet(
 		 */
 		*socket = handle_listen_for_script_packet(state,
 							  packet, direction);
+
 		if (*socket != NULL)
 			return STATUS_OK;
 
 		/* Is this an outbound packet matching a connecting socket? */
 		*socket = handle_connect_for_script_packet(state,
 							   packet, direction);
+
 		if (*socket != NULL)
 			return STATUS_OK;
+
 	}
-	/* See if there is an existing connection to handle this packet. */
-	if (state->socket_under_test != NULL &&
-	    is_script_packet_match_for_socket(state, packet,
-					      state->socket_under_test)) {
-		*socket = state->socket_under_test;
+
+	struct socket *found_socket;
+
+	if(packet->icmpv4 || packet->icmpv6){
+		found_socket = state->sockets; //take anyone
+	}
+
+	else{
+		//Search for a socket establishing a tcp connection
+		found_socket = find_connecting_socket(state);
+
+		if(!found_socket)
+			found_socket = find_socket_matching_packet_script_fd(state, packet);
+	}
+
+
+	if (found_socket != NULL &&
+		is_script_packet_match_for_socket(state, packet,
+								      found_socket)) {
+		*socket = found_socket;
+		state->socket_under_test = found_socket;
 		return STATUS_OK;
 	}
 
@@ -1224,8 +1525,10 @@ static int do_outbound_script_packet(
 	}
 
 	/* Sniff outbound live packet and verify it's for the right socket. */
-	if (sniff_outbound_live_packet(state, socket, &live_packet, error))
+	if (sniff_outbound_live_packet(state, socket, &live_packet, error)){
+		printf("1431: Bad socket\n");
 		goto out;
+	}
 
 	if ((socket->state == SOCKET_PASSIVE_PACKET_RECEIVED) &&
 	    packet->tcp && packet->tcp->syn && packet->tcp->ack) {
@@ -1406,7 +1709,7 @@ int reset_connection(struct state *state, struct socket *socket)
 		ack_seq = ntohl(socket->last_outbound_tcp_header.seq) + 1;
 	}
 
-	packet = new_tcp_packet(socket->address_family,
+	packet = new_tcp_packet(socket->script.fd, socket->address_family,
 				DIRECTION_INBOUND, ECN_NONE,
 				"R.", seq, 0, ack_seq, window, NULL, &error);
 	if (packet == NULL)

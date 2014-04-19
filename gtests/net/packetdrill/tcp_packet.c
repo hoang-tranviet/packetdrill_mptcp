@@ -50,7 +50,8 @@ static inline int is_tcp_flag_set(char flag, const char *flags)
 	return (strchr(flags, flag) != NULL) ? 1 : 0;
 }
 
-struct packet *new_tcp_packet(int address_family,
+struct packet *new_tcp_packet(int socket_fd,
+				   int address_family,
 			       enum direction_t direction,
 			       enum ip_ecn_t ecn,
 			       const char *flags,
@@ -77,6 +78,9 @@ struct packet *new_tcp_packet(int address_family,
 		asprintf(error, "IP options are not padded correctly "
 			 "to ensure IP header is a multiple of 4 bytes: "
 			 "%d excess bytes", ip_option_bytes & 0x3);
+
+		printf("1\n");
+
 		return NULL;
 	}
 	if (tcp_option_bytes & 0x3) {
@@ -84,6 +88,9 @@ struct packet *new_tcp_packet(int address_family,
 			 "TCP options are not padded correctly "
 			 "to ensure TCP header is a multiple of 4 bytes: "
 			 "%d excess bytes", tcp_option_bytes & 0x3);
+
+		printf("2\n");
+
 		return NULL;
 	}
 	assert((tcp_header_bytes & 0x3) == 0);
@@ -99,14 +106,16 @@ struct packet *new_tcp_packet(int address_family,
 		return NULL;
 	}
 
-	if (!is_tcp_flags_spec_valid(flags, error))
+	if (!is_tcp_flags_spec_valid(flags, error)){
 		return NULL;
+	}
 
 	/* Allocate and zero out a packet object of the desired size */
 	packet = packet_new(ip_bytes);
 	memset(packet->buffer, 0, ip_bytes);
 
 	packet->direction = direction;
+	packet->socket_script_fd = socket_fd;
 	packet->flags = 0;
 	packet->ecn = ecn;
 
