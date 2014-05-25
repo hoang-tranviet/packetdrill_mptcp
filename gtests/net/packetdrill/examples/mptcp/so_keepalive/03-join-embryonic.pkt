@@ -1,0 +1,50 @@
+0       `sysctl -w net.ipv4.tcp_keepalive_intvl=1`
++0      `sysctl -w net.ipv4.tcp_keepalive_probes=5`
++0      `sysctl -w net.ipv4.tcp_keepalive_time=10`
+
++0	socket(..., SOCK_STREAM, IPPROTO_TCP) = 3
++0	setsockopt(3, SOL_SOCKET, SO_REUSEADDR, [1], 4) = 0
++0	bind(3, ..., ...) = 0
++0	listen(3, 1) = 0
+
++0	< S 0:0(0) win 32792 <mss 1460,mp_capable a> sock(3)
++0	> S. 0:0(0) ack 1 win 28800 <mss 1460,mp_capable b> sock(3)
++0	< . 1:1(0) ack 1 win 29200 <mp_capable a b> sock(3)
+
++0	accept(3, ..., ...) = 4
+
++0	setsockopt(4, SOL_SOCKET, SO_KEEPALIVE, [1], 4) = 0
+
+/* Client send 1000 bytes */
++0	< . 1:1001(1000) ack 1 win 32792 <dss dack4 dsn4> sock(4)
++0	> . 1:1(0) ack 1001 <dss dack4> sock(4)
+
++0	read(4, ..., 1000) = 1000
+
+/* establish an additional subflow  and reset it before 3-way handshake finishes */
++0	socket(..., SOCK_STREAM, IPPROTO_TCP) = 5
++0	setsockopt(5, SOL_SOCKET, SO_REUSEADDR, [1], 4) = 0
++0	bind(5, {sa_family = AF_INET, sin_port = htons(13001), sin_addr = inet_addr("192.168.0.1")}, ...) = 0
++0	listen(5,1) = 0
+
++0	< S 0:0(0) win 32792 <mss 1460,mp_join_syn backup=0 address_id=0 token=sha1_32(b)> sock(5)
++0	> S. 0:0(0) ack 1 <mss 1460,mp_join_syn_ack backup=0 address_id=0 sender_hmac=trunc_l64_hmac(key_b key_a) > sock(5)
++0	< R. 1:1(0) ack 1 win 32792 sock(5)
+
++0	close(5) = 0
+
++10	> . 0:0(0) ack 1001 win 65535 <dss dack4> sock(4)
+/* And repeat the probe every 3 seconds if there are no response. */
++1	> . 0:0(0) ack 1001 win 65535 <dss dack4> sock(4)
++1	> . 0:0(0) ack 1001 win 65535 <dss dack4> sock(4)
++1	> . 0:0(0) ack 1001 win 65535 <dss dack4> sock(4)
++1	> . 0:0(0) ack 1001 win 65535 <dss dack4> sock(4)
+
+/* should fastclose */
++1	> . 1:1(0) ack 1001 win 65535 <mp_fastclose> sock(4)
++1	< R. 1001:1001(0) ack 1 win 32792 sock(4)
+
++0.1    `sysctl -w net.ipv4.tcp_keepalive_intvl=75`
++0      `sysctl -w net.ipv4.tcp_keepalive_probes=9`
++0      `sysctl -w net.ipv4.tcp_keepalive_time=7200`
+

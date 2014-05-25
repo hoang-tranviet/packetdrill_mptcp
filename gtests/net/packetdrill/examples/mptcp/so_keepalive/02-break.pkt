@@ -1,0 +1,46 @@
+0 `sysctl -w net.ipv4.tcp_keepalive_intvl=1`
++0 `sysctl -w net.ipv4.tcp_keepalive_probes=5`
++0 `sysctl -w net.ipv4.tcp_keepalive_time=10`
+
++0	socket(..., SOCK_STREAM, IPPROTO_TCP) = 3
++0	setsockopt(3, SOL_SOCKET, SO_REUSEADDR, [1], 4) = 0
++0	bind(3, ..., ...) = 0
++0	listen(3, 1) = 0
+
++0	< S 0:0(0) win 32792 <mss 1460,mp_capable a> sock(3)
++0	> S. 0:0(0) ack 1 win 28800 <mss 1460,mp_capable b> sock(3)
++0	< . 1:1(0) ack 1 win 29200 <mp_capable a b> sock(3)
+
++0	accept(3, ..., ...) = 4
+
++0	setsockopt(4, SOL_SOCKET, SO_KEEPALIVE, [1], 4) = 0
+
+/* Client send 1000 bytes */
++0	< . 1:1001(1000) ack 1 win 32792 <dss dack4 dsn4> sock(4)
++0	> . 1:1(0) ack 1001 <dss dack4> sock(4)
++0	read(4, ..., 1000) = 1000
+
++10	> . 0:0(0) ack 1001 <dss dack4> sock(4)
++1	> . 0:0(0) ack 1001 <dss dack4> sock(4)
++1	> . 0:0(0) ack 1001 <dss dack4> sock(4)
++1	> . 0:0(0) ack 1001 <dss dack4> sock(4)
+
+/* Client send 1000 bytes */
++0.5	< . 1001:2001(1000) ack 1 win 32792 <dss dack4 dsn4> sock(4)
++0	> . 1:1(0) ack 2001 <dss dack4> sock(4)
++0	read(4, ..., 1000) = 1000
+
++10	> . 0:0(0) ack 2001 <dss dack4> sock(4)
++1	> . 0:0(0) ack 2001 <dss dack4> sock(4)
++1	> . 0:0(0) ack 2001 <dss dack4> sock(4)
++1	> . 0:0(0) ack 2001 <dss dack4> sock(4)
++1	> . 0:0(0) ack 2001 <dss dack4> sock(4)
+
++1	> . 1:1(0) ack 2001 <mp_fastclose> sock(4)
++0	< R. 2001:2001(0) ack 1 win 32792 
+
+
++0.1 `sysctl -w net.ipv4.tcp_keepalive_intvl=75`
++0 `sysctl -w net.ipv4.tcp_keepalive_probes=9`
++0 `sysctl -w net.ipv4.tcp_keepalive_time=7200`
+
