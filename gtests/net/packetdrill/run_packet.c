@@ -1074,6 +1074,27 @@ bool same_mptcp_opt(struct tcp_option *opt_a, struct tcp_option *opt_b, struct p
 					return false;
 			}
 			break;
+		case REMOVE_ADDR_SUBTYPE:
+			if(opt_a->length != opt_b->length || opt_a->length <= TCPOLEN_REMOVE_ADDR)
+				return false;
+			int i = 0;
+			for( i=0; i< opt_a->length; i++){
+				if(*((u8*)&opt_a->data.remove_addr.address_id + i) != *((u8*)&opt_b->data.remove_addr.address_id + i))
+					return false;
+			}
+			break;
+		case MP_PRIO_SUBTYPE:
+			if(opt_a->data.mp_prio.flags != opt_b->data.mp_prio.flags)
+				return false;
+			if(opt_a->length == TCPOLEN_MP_PRIO_ID){
+				if(opt_a->data.mp_prio.address_id != opt_b->data.mp_prio.address_id)
+					return false;
+			}
+			break;
+		case MP_FAIL_SUBTYPE:
+			if(opt_a->data.mp_fail.dsn8 != opt_b->data.mp_fail.dsn8)
+				return false;
+			break;
 		case MP_FASTCLOSE_SUBTYPE:
 			if(opt_a->data.mp_fastclose.receiver_key != opt_b->data.mp_fastclose.receiver_key)
 				return false;

@@ -104,6 +104,7 @@
 #include "tcp.h"
 #include "tcp_options.h"
 #include "tcp_options_iterator.h"
+#include "queue/queue.h"
 
 /* This include of the bison-generated .h file must go last so that we
  * can first include all of the declarations on which it depends.
@@ -585,8 +586,8 @@ struct tcp_option *dss_do_auto(bool no_checksum, bool fin_flag){
 	opt->data.dss.flag_F = (char)fin_flag;
 	opt->data.dss.subtype = DSS_SUBTYPE;
 	opt->data.mp_capable.subtype = DSS_SUBTYPE;
-	opt->data.dss.reserved_first_bits = DSS_RESERVED;
-	opt->data.dss.reserved_last_bits = DSS_RESERVED;
+	opt->data.dss.reserved_first_bits = ZERO_RESERVED;
+	opt->data.dss.reserved_last_bits = ZERO_RESERVED;
 	return opt;
 }
 
@@ -612,8 +613,8 @@ struct tcp_option *dss_do_dack_only(int type, int val, bool fin_flag){
 	opt->data.dss.flag_a 	= (type==8);
 	opt->data.dss.flag_F 	= fin_flag;
 	opt->data.dss.subtype 	= DSS_SUBTYPE;
-	opt->data.dss.reserved_first_bits 	= DSS_RESERVED;
-	opt->data.dss.reserved_last_bits 	= DSS_RESERVED;
+	opt->data.dss.reserved_first_bits 	= ZERO_RESERVED;
+	opt->data.dss.reserved_last_bits 	= ZERO_RESERVED;
 	opt->data.mp_capable.subtype 		= DSS_SUBTYPE;
 	return opt;
 }
@@ -685,13 +686,11 @@ struct tcp_option *dss_do_dsn_dack( int dack_type, int dack_val,
 	opt->data.dss.flag_F = fin_flag;
 	opt->data.dss.subtype = DSS_SUBTYPE;
 	opt->data.mp_capable.subtype = DSS_SUBTYPE;
-	opt->data.dss.reserved_first_bits = DSS_RESERVED;
-	opt->data.dss.reserved_last_bits = DSS_RESERVED;
+	opt->data.dss.reserved_first_bits = ZERO_RESERVED;
+	opt->data.dss.reserved_last_bits = ZERO_RESERVED;
 
 	return opt;
 }
-
-
 
 %}
 
@@ -774,7 +773,9 @@ struct tcp_option *dss_do_dsn_dack( int dack_type, int dack_val,
 %token <reserved> MP_JOIN_SYN MP_JOIN_SYN_BACKUP MP_JOIN_SYN_ACK_BACKUP MP_JOIN_ACK MP_JOIN_SYN_ACK
 %token <reserved> DSS DACK4 DSN4 DACK8 DSN8 FIN SSN DLL NOCS CKSUM ADDRESS_ID BACKUP TOKEN AUTO RAND TRUNC_R64_HMAC
 %token <reserved> SENDER_HMAC TRUNC_L64_HMAC FULL_160_HMAC SHA1_32
-%token <reserved> ADD_ADDRESS ADD_ADDR_IPV4 ADD_ADDR_IPV6 PORT
+%token <reserved> ADD_ADDRESS ADD_ADDR_IPV4 ADD_ADDR_IPV6 PORT MP_FAIL
+%token <reserved> REMOVE_ADDRESS ADDRESSES_ID LIST_ID
+%token <reserved> MP_PRIO
 %token <reserved> FAST_OPEN
 %token <reserved> ECT0 ECT1 CE ECT01 NO_ECN
 %token <reserved> IPV4 IPV6 ICMP UDP GRE MTU
@@ -1413,6 +1414,24 @@ address_id
 }
 ;
 
+addresses_id
+: ADDRESS_ID '=' '[' list_id ']' {}
+
+list_id
+: INTEGER {
+	if(!is_valid_u8($1))
+		semantic_error("REMOVE_ADDRESS: address_id should be a 8 bits unsigned integer.");
+	if(queue_enqueue_val(&mp_state.script_only_vals_queue, $1 ))
+		semantic_error("Too many values are enqueued in script");
+}
+| INTEGER ',' list_id {
+	if(!is_valid_u8($1))
+		semantic_error("REMOVE_ADDRESS: address_id should be a 8 bits unsigned integer.");
+	if(queue_enqueue_val(&mp_state.script_only_vals_queue, $1 ))
+		semantic_error("Too many values are enqueued in script");
+}
+;
+
 add_addr_ip
 :			{$$.type = UNDEFINED;	 }
 | IPV4 '=' INET_ADDR '(' STRING ')' {
@@ -1618,7 +1637,7 @@ tcp_option
 
 }
 | ADD_ADDRESS address_id add_addr_ip port { // address_id = $2, add_addr_ip = $3, port = $4
-	// ipv4
+	// default = ipv4
 	if($3.type == UNDEFINED){
 		struct in_addr adr4_zero = ipv4_parse("0.0.0.0").ip.v4;
 //		struct in6_addr adr6_zero = ipv6_parse("::").ip.v6;
@@ -1629,32 +1648,80 @@ tcp_option
 		}else if($4 != UNDEFINED){
 			$$ = tcp_option_new(TCPOPT_MPTCP, TCPOLEN_ADD_ADDR_V4_PORT);
 			$$->data.add_addr.ipv4_w_port.ipv4 = adr4_zero;
-			$$->data.add_addr.ipv4_w_port.port = $4;
+			$$->data.add_addr.ipv4_w_port.port = htons($4);
 		}
+		$$->data.add_addr.ipver = 4;
+	// ipv4
 	}else if($3.type == AF_INET && $4 == UNDEFINED){
 		$$ = tcp_option_new(TCPOPT_MPTCP, TCPOLEN_ADD_ADDR_V4);
 		$$->data.add_addr.ipv4 = $3.ip_addr;
+		$$->data.add_addr.ipver = 4;
 	// ipv4 + port
 	}else if($3.type == AF_INET && $4 != UNDEFINED){
 		$$ = tcp_option_new(TCPOPT_MPTCP, TCPOLEN_ADD_ADDR_V4_PORT);
 		$$->data.add_addr.ipv4_w_port.ipv4 = $3.ip_addr;
-		$$->data.add_addr.ipv4_w_port.port = $4;
-	}else if($3.type == 6 && $4 == UNDEFINED){
-		$$ = tcp_option_new(TCPOPT_MPTCP, TCPOLEN_ADD_ADDR_V6);
+		$$->data.add_addr.ipv4_w_port.port = htons($4);
+		$$->data.add_addr.ipver = 4;
 	// ipv6
 	}else if($3.type == AF_INET6 && $4 == UNDEFINED){
 		$$ = tcp_option_new(TCPOPT_MPTCP, TCPOLEN_ADD_ADDR_V6);
 		$$->data.add_addr.ipv6 = $3.ip6_addr;
+		$$->data.add_addr.ipver = 6;
 	// ipv6 + port
 	}else if($3.type == AF_INET6 && $4 != UNDEFINED){
 		$$ = tcp_option_new(TCPOPT_MPTCP, TCPOLEN_ADD_ADDR_V6_PORT);
 		$$->data.add_addr.ipv6_w_port.ipv6 = $3.ip6_addr;
-		$$->data.add_addr.ipv6_w_port.port = $4;
+		$$->data.add_addr.ipv6_w_port.port = htons($4);
+		$$->data.add_addr.ipver = 6;
 	}else{
 		semantic_error("Values assigned to add_address option are not valid");
 	}
 	$$->data.add_addr.address_id = $2;
 	$$->data.mp_capable.subtype = ADD_ADDR_SUBTYPE;
+}
+| REMOVE_ADDRESS addresses_id{
+
+	if(queue_size_val(&mp_state.script_only_vals_queue) == 0)
+		semantic_error("REMOVE_ADDRESS: at least one address_id has to be mentionned");
+
+	u8 nb_ids = queue_size_val(&mp_state.script_only_vals_queue);
+	$$ = tcp_option_new(TCPOPT_MPTCP, TCPOLEN_REMOVE_ADDR + nb_ids);
+	$$->data.remove_addr.resvd = ZERO_RESERVED;
+	u64 val;
+	int i = 0;
+	u8 *cur_id = &$$->data.remove_addr.address_id;
+	for (i=0; i< nb_ids; i++){
+		if(queue_dequeue_val(&mp_state.script_only_vals_queue, &val))
+			semantic_error("REMOVE_ADDRESS: problem dequeuing values from script_only_vals_queue");
+		*(cur_id + i) = (u8)val;
+	}
+	$$->data.mp_capable.subtype = REMOVE_ADDR_SUBTYPE;
+
+	// free all used memory for this values
+	queue_free_val(&mp_state.script_only_vals_queue);
+}
+| MP_PRIO is_backup address_id {
+	if($3 == UNDEFINED)
+		$$ = tcp_option_new(TCPOPT_MPTCP, TCPOLEN_MP_PRIO);
+	else{
+		$$ = tcp_option_new(TCPOPT_MPTCP, TCPOLEN_MP_PRIO_ID);
+		if(!is_valid_u8($3))
+			semantic_error("Value assigned to address_id is not a valid unsigned 8 bits number.");
+		$$->data.mp_prio.address_id = $3;
+	}
+	$$->data.mp_prio.flags = $2;
+	$$->data.mp_capable.subtype = MP_PRIO_SUBTYPE;
+}
+| MP_FAIL dsn {
+	if($2.type == 4)
+		semantic_error("Value assigned to a MP_FAIL option is not a valid unsigned 64 bits number.");
+
+	$$ = tcp_option_new(TCPOPT_MPTCP, TCPOLEN_MP_FAIL);
+	$$->data.mp_fail.dsn8 = $2.val;
+	$$->data.mp_fail.resvd1 =ZERO_RESERVED;
+	$$->data.mp_fail.resvd2 =ZERO_RESERVED;
+
+	$$->data.mp_capable.subtype = MP_FAIL_SUBTYPE;
 }
 | MP_FASTCLOSE mptcp_var_or_empty add_to_var {
 	$$ = tcp_option_new(TCPOPT_MPTCP, TCPOLEN_MP_FASTCLOSE);
@@ -1682,8 +1749,8 @@ tcp_option
 	}
 
 	$$->data.mp_fastclose.subtype = MP_FASTCLOSE_SUBTYPE;
-	$$->data.mp_fastclose.reserved_first_bits = DSS_RESERVED;
-	$$->data.mp_fastclose.reserved_last_bits = DSS_RESERVED;
+	$$->data.mp_fastclose.reserved_first_bits = ZERO_RESERVED;
+	$$->data.mp_fastclose.reserved_last_bits = ZERO_RESERVED;
 //	$$->data.mp_capable.version = MPTCP_VERSION;
 	$$->data.mp_capable.subtype = MP_FASTCLOSE_SUBTYPE;
 }

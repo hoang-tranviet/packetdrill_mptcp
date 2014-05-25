@@ -14,6 +14,7 @@ void init_mp_state()
 	mp_state.kernel_key_set = false;
 	queue_init(&mp_state.vars_queue);
 	queue_init_val(&mp_state.vals_queue);
+	queue_init_val(&mp_state.script_only_vals_queue);
 	mp_state.vars = NULL; //Init hashmap
 	mp_state.last_packetdrill_addr_id = 0;
 	mp_state.idsn = UNDEFINED;
@@ -927,7 +928,6 @@ int dss_inbound_parser(struct packet *packet_to_modify,
 			struct dack *dack_script= (struct dack*)((u32*)dss_opt_script+1);
 			struct dsn *dsn_script	= (struct dsn*) ((u32*)dss_opt_script+2);
 
-
 			// put information in script packet automatically
 			if(dss_opt_script->data.dss.dack_dsn.dack.dack4 == UNDEFINED)
 				dack_live->dack4 = htonl(mp_state.remote_idsn + mp_state.remote_ssn + mp_state.remote_last_pkt_length);
@@ -1246,7 +1246,7 @@ int dss_inbound_parser(struct packet *packet_to_modify,
 				dsn_live->dsn8 = htonll(sha1_least_64bits(*key) + additional_val);
 			}else{
 				if(dsn_script->dsn8>0)
-					dsn_live->dsn8 = htonl(sha1_least_64bits(mp_state.packetdrill_key) + dsn_script->dsn8);
+					dsn_live->dsn8 = htonll(sha1_least_64bits(mp_state.packetdrill_key) + dsn_script->dsn8);
 			}
 
 			if(dss_opt_script->length == TCPOLEN_DSS_DACK4_DSN4){
@@ -1741,13 +1741,12 @@ int mptcp_subtype_dss(struct packet *packet_to_modify,
 
 	return STATUS_OK;
 }
+
 int mptcp_subtype_add_address(struct packet *packet_to_modify,
 		struct packet *live_packet,
 		struct tcp_option *dss_opt_script,
 		unsigned direction)
 {
-
-
 	struct tcp_option* dss_opt_live = get_mptcp_option(live_packet, ADD_ADDR_SUBTYPE);
 	if(!dss_opt_live)
 		return STATUS_ERR;
@@ -1758,15 +1757,16 @@ int mptcp_subtype_add_address(struct packet *packet_to_modify,
 		struct mp_subflow *subflow = find_subflow_matching_inbound_packet(packet_to_modify);
 		if(!subflow)
 			return STATUS_ERR;
-		// TODO: it does not take in account the ipv4 given in script
+		// TODO: find next correct ip_address automatically, actually
+		// it lets the possibility to change only the port number with an already assigned addr_id
 		if((s8)dss_opt_script->data.add_addr.address_id == UNDEFINED)
 			dss_opt_live->data.add_addr.address_id = subflow->packetdrill_addr_id;
 
 		if(dss_opt_live->length == TCPOLEN_ADD_ADDR_V4){
 			if(!memcmp(&dss_opt_script->data.add_addr.ipv4, &adr4_zero, sizeof(struct in_addr)))
-				dss_opt_live->data.add_addr.ipv4.s_addr = inet_netof(subflow->src_ip.ip.v4);
+				dss_opt_live->data.add_addr.ipv4 = subflow->src_ip.ip.v4;
 			else{
-				dss_opt_live->data.add_addr.ipv4.s_addr = inet_netof(dss_opt_live->data.add_addr.ipv4);
+				dss_opt_live->data.add_addr.ipv4 = dss_opt_script->data.add_addr.ipv4;
 			}
 		}else if(dss_opt_live->length == TCPOLEN_ADD_ADDR_V4_PORT){
 			if(!memcmp(&dss_opt_script->data.add_addr.ipv4_w_port.ipv4, &adr4_zero, sizeof(struct in_addr)))
@@ -1813,6 +1813,81 @@ int mptcp_subtype_add_address(struct packet *packet_to_modify,
 	return STATUS_OK;
 }
 
+int mptcp_subtype_remove_address(struct packet *packet_to_modify,
+		struct packet *live_packet,
+		struct tcp_option *dss_opt_script,
+		unsigned direction)
+{
+/*	// TODO(reward): complete automatically the field
+
+	u8 *cur_id = (u8*)&dss_opt_script->data.remove_addr.address_id;
+	int nb_ids  = dss_opt_script->length - TCPOLEN_REMOVE_ADDR;
+
+//	printf("1822: processing remove_address packet, %d ids, [%u, %u, %u, %u, %u]\n", nb_ids, (unsigned)*cur_id, (unsigned)*(cur_id+1), (unsigned)*(cur_id+2), (unsigned)*(cur_id+3), (unsigned)*(cur_id+4));
+*/
+
+	if(direction == DIRECTION_INBOUND){
+
+	}else if(direction == DIRECTION_OUTBOUND){
+
+	}else
+		return STATUS_ERR;
+	return STATUS_OK;
+}
+
+/**
+ * Insert appropriate key in mp_fail mptcp option.
+ */
+int mptcp_subtype_mp_fail(struct packet *packet_to_modify,
+		struct packet *live_packet,
+		struct tcp_option *dss_opt_script,
+		unsigned direction)
+{
+	struct tcp_option* dss_opt_live = get_tcp_option(live_packet, TCPOPT_MPTCP);
+	if(!dss_opt_live)
+		return STATUS_ERR;
+
+	// TODO(redward): verify if it really converts correctly the dsn8
+
+	if(direction == DIRECTION_INBOUND){
+		u32 bytes_sent_on_all_ssn = get_sum_ssn();
+
+		//Set dsn being value specified in script
+		if(dss_opt_script->data.dss.dsn.dsn8 == UNDEFINED)
+			dss_opt_script->data.dss.dsn.dsn8 = htonll(mp_state.idsn + bytes_sent_on_all_ssn); //subflow->ssn);
+		else if(dss_opt_script->data.dss.dsn.dsn8 == SCRIPT_DEFINED_TO_HASH_LSB){
+			u64 additional_val 	= find_next_value();
+			u64 *key = find_next_key();
+			if(!key || additional_val==STATUS_ERR)
+				return STATUS_ERR;
+			dss_opt_script->data.dss.dsn.dsn8 = htonll(sha1_least_64bits(*key) + additional_val);
+		}else{
+			// this is to get the relative numbers from script
+			if(dss_opt_script->data.dss.dsn.dsn8>0)
+				dss_opt_script->data.dss.dsn.dsn8 = htonll(sha1_least_64bits(mp_state.packetdrill_key) +
+						dss_opt_script->data.dss.dsn.dsn8 );
+		}
+	}else if(direction == DIRECTION_OUTBOUND){
+		//Set dsn being value specified in script
+		if(dss_opt_script->data.mp_fail.dsn8 == UNDEFINED){
+			dss_opt_script->data.mp_fail.dsn8 		= dss_opt_live->data.mp_fail.dsn8;
+		}else if(dss_opt_script->data.dss.dsn.dsn8  == SCRIPT_DEFINED_TO_HASH_LSB){
+			u64 additional_val 	= find_next_value();
+			u64 *key 			= find_next_key();
+			if(!key || additional_val==STATUS_ERR)
+				return STATUS_ERR;
+			dss_opt_script->data.dss.dsn.dsn8  = htonll(sha1_least_64bits(*key) + additional_val);
+		}else{
+			// this is to get the relative numbers from script
+			if(dss_opt_script->data.dss.dsn.dsn8 >0){
+				dss_opt_script->data.dss.dsn.dsn8  = htonll(sha1_least_64bits(mp_state.kernel_key) +
+						dss_opt_script->data.dss.dsn.dsn8 );
+			}
+		}
+	}else
+		return STATUS_ERR;
+	return STATUS_OK;
+}
 /**
  * Insert appropriate key in mp_fastclose mptcp option.
  */
@@ -1888,20 +1963,25 @@ int mptcp_insert_and_extract_opt_fields(struct packet *packet_to_modify,
 						tcp_opt_to_modify,
 						direction);
 				break;
-			case ADD_ADDR_SUBTYPE: 	//03 TODO: in progress
+			case ADD_ADDR_SUBTYPE: 		//03
 				error = mptcp_subtype_add_address(packet_to_modify,
 						live_packet,
 						tcp_opt_to_modify,
 						direction);
 				break;
-			case REMOVE_ADDR_SUBTYPE:	// 04 TODO
-				printf("REMOVE_ADDR_SUBTYPE, todo\n");
+			case REMOVE_ADDR_SUBTYPE:	// 04 TODO(redward): in progress
+				/*error = mptcp_subtype_remove_address(packet_to_modify,
+						live_packet,
+						tcp_opt_to_modify,
+						direction); */
 				break;
-			case MP_PRIO_SUBTYPE: 		// 05 TODO
-				printf("MP_PRIO_SUBTYPE, todo\n");
+			case MP_PRIO_SUBTYPE: 		// 05 TODO(redward): in progress
 				break;
-			case MP_FAIL_SUBTYPE: 		// 06 TODO
-				printf("MP_FAIL_SUBTYPE, todo\n");
+			case MP_FAIL_SUBTYPE: 		// 06 TODO(redward): in progress
+				error = mptcp_subtype_mp_fail(packet_to_modify,
+						live_packet,
+						tcp_opt_to_modify,
+						direction);
 				break;
 			case MP_FASTCLOSE_SUBTYPE:		// 07
 				error = mptcp_subtype_mp_fastclose(packet_to_modify,
