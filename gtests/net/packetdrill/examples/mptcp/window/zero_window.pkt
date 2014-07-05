@@ -1,0 +1,43 @@
++0	socket(..., SOCK_STREAM, IPPROTO_TCP) = 3
++0	setsockopt(3, SOL_SOCKET, SO_REUSEADDR, [1], 4) = 0
++0	bind(3, ..., ...) = 0
++0	listen(3, 1) = 0
+
++0  socket(..., SOCK_STREAM, IPPROTO_TCP) = 5
++0  setsockopt(5, SOL_SOCKET, SO_REUSEADDR, [1], 4) = 0
++0  bind(5, {sa_family = AF_INET, sin_port = htons(13001), sin_addr = inet_addr("192.168.0.1")}, ...) = 0
++0  listen(5,1) = 0
+
++0	< S 0:0(0) win 32792 <mss 1460,mp_capable a> sock(3)
++0	> S. 0:0(0) ack 1 win 28800 <mss 1460,mp_capable b> sock(3)
++0	< . 1:1(0) ack 1 win 29200 <mp_capable a b> sock(3)
+
++0	accept(3, ..., ...) = 4
+
++0  < S 0:0(0) win 32792 <mss 1460,mp_join_syn backup=0 address_id=0 token=sha1_32(b)> sock(5)
++0  > S. 0:0(0) ack 1 <mss 1460,mp_join_syn_ack backup=0 address_id=0 sender_hmac=trunc_l64_hmac(b a) > sock(5)
++0.1  < . 1:1(0) ack 1 win 32792 <mp_join_ack sender_hmac=full_160_hmac(a b)> sock(5)
++0 mp_join_accept(5) = 6
++0  > . 1:1(0) ack 1 <...> sock(6)
+
+/* Client send 1000 bytes */
++0	write(4, ..., 1000) = 1000
++0	> P. 1:1001(1000) ack 1 <dss dack4 dsn4> sock(4)
+/* We also set the window to 0 for this subflow */
++0	< . 1:1(0) ack 1001 win 0 <dss dack4> sock(4)
+
+/* Give the mptcp-level 500 bytes of window, to trigger the probe-timer */
++0	< . 1:1(0) ack 1 win 500 <dss dack4> sock(6)
+
+/* Now, close this subflow */
++0	< R 1:1(0) ack 1 win 500 sock(6)
+
+/* Client send 1000 bytes */
++0.5	write(4, ..., 1000) = 1000
++0.6	> . 1000:1000(0) ack 1 <dss dack4> sock(4)
++0	< . 1:1(0) ack 1001 win 500 <dss dack4> sock(4)
++0.6	> P. 1001:1501(500) ack 1 <dss dack4 dsn4> sock(4)
++0	< . 1:1(0) ack 1501 win 500 <dss dack4> sock(4)
++0	> P. 1501:2001(500) ack 1 <dss dack4 dsn4> sock(4)
++0	< . 1:1(0) ack 2001 win 500 <dss dack4> sock(4)
+
