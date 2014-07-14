@@ -24,7 +24,7 @@
 
 +0  < S 0:0(0) win 32792 <mss 1020,sackOK,nop,nop,nop,wscale 7,mp_capable key_a> sock(3)
 +0  > S. 0:0(0) ack 1 win 28800 <mss 1460,nop,nop,sackOK,nop,wscale 7,mp_capable key_b> sock(3)
-+0.2  < . 1:1(0) ack 1 win 257 <mp_capable key_a key_b> sock(3)
++0.01  < . 1:1(0) ack 1 win 257 <mp_capable key_a key_b> sock(3)
 +0  accept(3, ..., ...) = 4
 
 //First subflow
@@ -39,14 +39,14 @@
 
 +0.1  write(4, ..., 1440) = 1440 
 +0 > P. 1:1441(1440) ack 1 <dss dack4=trunc_r64_hmac(key_a)+1 dsn4=trunc_r64_hmac(key_b)+1 >  sock(6)
-+0.3 < . 1:1(0) ack 1441 win 225 <dss dack4=trunc_r64_hmac(key_b)+1441> sock(6)
++0.15 < . 1:1(0) ack 1441 win 225 <dss dack4=trunc_r64_hmac(key_b)+1441> sock(6)
 
 +0  write(4, ..., 1440) = 1440
-+0  > . 1:1001(1000) ack 1 <dss dack4=trunc_r64_hmac(key_a)+1 dsn4=trunc_r64_hmac(key_b)+1001> sock(4)
-+0  < . 1:1(0) ack 1001 win 225 <dss dack4=trunc_r64_hmac(key_b)+2001> sock(4)
++0  > . 1:1001(1000) ack 1 <dss dack4 dsn4> sock(4)
++0  < . 1:1(0) ack 1001 win 225 <dss dack4=2441> sock(4)
 
 // TODO(redward) It should be not +0 => should be at least +0.2
-+0  > P. 1001:1441(440) ack 1 <dss dack4 dsn4> sock(4)
-+0.01 < . 1:1(0) ack 1441 win 225 <dss dack4> sock(4)
++0.45  > P. 1001:1441(440) ack 1 <dss dack4 dsn4> sock(4)
++0 < . 1:1(0) ack 1441 win 225 <dss dack4> sock(4)
 
 
