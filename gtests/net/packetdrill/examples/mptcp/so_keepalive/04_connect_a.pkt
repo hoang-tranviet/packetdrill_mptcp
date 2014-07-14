@@ -1,0 +1,40 @@
+0 `sysctl -w net.ipv4.tcp_keepalive_intvl=1`
++0 `sysctl -w net.ipv4.tcp_keepalive_probes=5`
++0 `sysctl -w net.ipv4.tcp_keepalive_time=10`
++0 `sysctl -w net.ipv4.tcp_timestamps=0`
++0 `sysctl -w net.ipv4.tcp_sack=0`
+
+// create a socket
++0.000 socket(..., SOCK_STREAM, IPPROTO_TCP) = 3
++0.000 fcntl(3, F_GETFL) = 0x2 (flags O_RDWR)
++0.000 fcntl(3, F_SETFL, O_RDWR|O_NONBLOCK) = 0
+
++0 connect(3, ..., ...) = -1 EINPROGRESS (Operation now in progress)
++0 > S 0:0(0) <mss 1460,nop,wscale 7,mp_capable a> sock(3)
++0 < S. 0:0(0) ack 1 win 5792 <mss 1460,nop,wscale 7,mp_capable b> sock(3)
++0 > . 1:1(0) ack 1 <mp_capable a b, dss dack4> sock(3) 
++0 getsockopt(3, SOL_SOCKET, SO_ERROR, [0], [4]) = 0
++0 fcntl(3, F_SETFL, O_RDWR) = 0   // set back to blocking
+
++0 setsockopt(3, SOL_SOCKET, SO_KEEPALIVE, [1], 4) = 0
+
+/* Client send 1000 bytes */
++0 write(3,...,1000) = 1000
++0      > P. 1:1001(1000) ack 1 <dss dack4 dsn4> sock(3)
++0      < . 1:1(0) ack 1001 win 4242 <dss dack4> sock(3)
+
++10     > . 1000:1000(0) ack 1 <dss dack4> sock(3)
++1      > . 1000:1000(0) ack 1 <dss dack4> sock(3)
++1      > . 1000:1000(0) ack 1 <dss dack4> sock(3)
++1      > . 1000:1000(0) ack 1 <dss dack4> sock(3)
++1      > . 1000:1000(0) ack 1 <dss dack4> sock(3)
+
++1      > . 1001:1001(0) ack 1 <mp_fastclose> sock(3)
++0      < R. 1:1(0) ack 1001 win 32792
+
++0.1 `sysctl -w net.ipv4.tcp_keepalive_intvl=75`
++0 `sysctl -w net.ipv4.tcp_keepalive_probes=9`
++0 `sysctl -w net.ipv4.tcp_keepalive_time=7200`
++0 `sysctl -w net.ipv4.tcp_timestamps=1`
++0 `sysctl -w net.ipv4.tcp_sack=1`
+
