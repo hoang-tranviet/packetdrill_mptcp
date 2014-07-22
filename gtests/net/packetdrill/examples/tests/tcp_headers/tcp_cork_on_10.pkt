@@ -22,8 +22,8 @@
 +0.0 listen(3, 1) = 0
 
 +0 < S 0:0(0) win 24900 <mss 70,sackOK,nop,nop,nop,wscale 7, mp_capable a>
-+0 > S. 0:0(0) ack 1 <mss 1460,sackOK,nop,nop,nop,wscale 8, mp_capable b>
-+0 < . 1:1(0) ack 1 win 257 <mp_capable a b, dss dack4>
++0 > S. 0:0(0) ack 1 <mss 1460,sackOK,nop,nop,nop,wscale 7, mp_capable b>
++0.01 < . 1:1(0) ack 1 win 257 <mp_capable a b, dss dack4>
 +0 accept(3, ..., ...) = 4
 
 // Put TCP_CORK flag ON
@@ -43,7 +43,7 @@
 +0.0 > . 401:451(50) ack 1 <dss dack4 dsn4 >
 +0.0 > . 451:501(50) ack 1 <dss dack4 dsn4 >
 
-+0.05 < . 1:1(0) ack 50 win 257 <dss dack4>
++0.01 < . 1:1(0) ack 50 win 257 <dss dack4>
 +0   < . 1:1(0) ack 101 win 257 <dss dack4>
 +0   < . 1:1(0) ack 151 win 257 <dss dack4>
 +0   < . 1:1(0) ack 201 win 257 <dss dack4>
@@ -55,6 +55,6 @@
 +0   < . 1:1(0) ack 501 win 257 <dss dack4>
 
 // The last is not complete => should wait 407 ms
-+0.472 > P. 501:550(49) ack 1 <dss dack4 dsn4 >
++0.41 > P. 501:550(49) ack 1 <dss dack4 dsn4 >
 +0 < . 1:1(0) ack 550 win 257 <dss dack4>
 
