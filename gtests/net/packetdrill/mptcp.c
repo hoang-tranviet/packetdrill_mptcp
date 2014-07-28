@@ -232,7 +232,7 @@ struct mp_subflow *new_subflow_inbound(struct packet *inbound_packet)
 
 	subflow->src_port =	ntohs(inbound_packet->tcp->src_port);
 	subflow->dst_port = ntohs(inbound_packet->tcp->dst_port);
-	subflow->packetdrill_rand_nbr =	generate_32();
+	subflow->packetdrill_rand_nbr =	42;
 	subflow->packetdrill_addr_id = mp_state.last_packetdrill_addr_id;
 	mp_state.last_packetdrill_addr_id++;
 	subflow->ssn = 1; // =1 because it initialized at third ack
