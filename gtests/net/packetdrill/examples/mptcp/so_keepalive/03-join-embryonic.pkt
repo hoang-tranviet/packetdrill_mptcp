@@ -1,6 +1,6 @@
 0       `sysctl -w net.ipv4.tcp_keepalive_intvl=1`
-+0      `sysctl -w net.ipv4.tcp_keepalive_probes=5`
-+0      `sysctl -w net.ipv4.tcp_keepalive_time=10`
++0      `sysctl -w net.ipv4.tcp_keepalive_probes=3`
++0      `sysctl -w net.ipv4.tcp_keepalive_time=3`
 
 +0	socket(..., SOCK_STREAM, IPPROTO_TCP) = 3
 +0	setsockopt(3, SOL_SOCKET, SO_REUSEADDR, [1], 4) = 0
@@ -35,10 +35,8 @@
 
 +0	close(6) = 0
 
-+10	> . 0:0(0) ack 1001 <dss dack4> sock(4)
++3	> . 0:0(0) ack 1001 <dss dack4> sock(4)
 /* And repeat the probe every 3 seconds if there are no response. */
-+1	> . 0:0(0) ack 1001 <dss dack4> sock(4)
-+1	> . 0:0(0) ack 1001 <dss dack4> sock(4)
 +1	> . 0:0(0) ack 1001 <dss dack4> sock(4)
 +1	> . 0:0(0) ack 1001 <dss dack4> sock(4)
 

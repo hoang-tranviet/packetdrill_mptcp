@@ -1,6 +1,6 @@
 0       `sysctl -w net.ipv4.tcp_keepalive_intvl=1`
-+0      `sysctl -w net.ipv4.tcp_keepalive_probes=5`
-+0      `sysctl -w net.ipv4.tcp_keepalive_time=10`
++0      `sysctl -w net.ipv4.tcp_keepalive_probes=3`
++0      `sysctl -w net.ipv4.tcp_keepalive_time=3`
 +0      `ip tcp_metrics flush`
 
 + 0	socket(..., SOCK_STREAM, IPPROTO_TCP) = 3
@@ -40,10 +40,8 @@
 +0	< R. 1:1(0) ack 1 win 32792 sock(6)
 
 /* after 10 seconds the server should probe to see if the client is alive. */
-+10.0	> . 0:0(0) ack 1001 <dss dack4> sock(4)
++3	> . 0:0(0) ack 1001 <dss dack4> sock(4)
 /* And repeat the probe every 3 seconds if there are no response. */
-+1	> . 0:0(0) ack 1001 <dss dack4> sock(4)
-+1	> . 0:0(0) ack 1001 <dss dack4> sock(4)
 +1	> . 0:0(0) ack 1001 <dss dack4> sock(4)
 +1	> . 0:0(0) ack 1001 <dss dack4> sock(4)
 /* should fastclose */

@@ -1,6 +1,6 @@
 0	`sysctl -w net.ipv4.tcp_keepalive_intvl=1`
-+0	`sysctl -w net.ipv4.tcp_keepalive_probes=5`
-+0	`sysctl -w net.ipv4.tcp_keepalive_time=10`
++0	`sysctl -w net.ipv4.tcp_keepalive_probes=3`
++0	`sysctl -w net.ipv4.tcp_keepalive_time=3`
 +0	`ip tcp_metrics flush`
 
 +0	socket(..., SOCK_STREAM, IPPROTO_TCP) = 3
@@ -36,13 +36,9 @@
 +0.1	setsockopt(4, SOL_SOCKET, SO_KEEPALIVE, [1], 4) = 0
 
 /* Keepalives are sent on all subflows */
-+10	> . 0:0(0) ack 1 <dss dack4> sock(6)
++3	> . 0:0(0) ack 1 <dss dack4> sock(6)
 +0	> . 0:0(0) ack 1001 <dss dack4> sock(4)
 /* And repeat the probe every 3 seconds if there are no response. */
-+1	> . 0:0(0) ack 1 <dss dack4> sock(6)
-+0	> . 0:0(0) ack 1001 <dss dack4> sock(4)
-+1	> . 0:0(0) ack 1 <dss dack4> sock(6)
-+0	> . 0:0(0) ack 1001 <dss dack4> sock(4)
 +1	> . 0:0(0) ack 1 <dss dack4> sock(6)
 +0	> . 0:0(0) ack 1001 <dss dack4> sock(4)
 +1	> . 0:0(0) ack 1 <dss dack4> sock(6)

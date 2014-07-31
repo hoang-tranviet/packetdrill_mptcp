@@ -1,6 +1,6 @@
 0 `sysctl -w net.ipv4.tcp_keepalive_intvl=1`
-+0 `sysctl -w net.ipv4.tcp_keepalive_probes=5`
-+0 `sysctl -w net.ipv4.tcp_keepalive_time=10`
++0 `sysctl -w net.ipv4.tcp_keepalive_probes=3`
++0 `sysctl -w net.ipv4.tcp_keepalive_time=3`
 +0 `sysctl -w net.ipv4.tcp_timestamps=0`
 +0 `sysctl -w net.ipv4.tcp_sack=0`
 
@@ -23,9 +23,7 @@
 +0      > P. 1:1001(1000) ack 1 <dss dack4 dsn4> sock(3)
 +0      < . 1:1(0) ack 1001 win 4242 <dss dack4> sock(3)
 
-+10     > . 1000:1000(0) ack 1 <dss dack4> sock(3)
-+1      > . 1000:1000(0) ack 1 <dss dack4> sock(3)
-+1      > . 1000:1000(0) ack 1 <dss dack4> sock(3)
++3     > . 1000:1000(0) ack 1 <dss dack4> sock(3)
 +1      > . 1000:1000(0) ack 1 <dss dack4> sock(3)
 +1      > . 1000:1000(0) ack 1 <dss dack4> sock(3)
 
