@@ -2,6 +2,8 @@
 //0.0 `sysctl -w net.ipv6.conf.eth0.accept_dad=0`
 --ip_version=ipv6
 
+0 `cat /proc/net/mptcp_fullmesh`
+
 +0 socket(..., SOCK_STREAM, IPPROTO_TCP) = 3
 +0  setsockopt(3, SOL_SOCKET, SO_REUSEADDR, [1], 4) = 0
 +0  bind(3, {sa_family = AF_INET6, sin_port = htons(14001), sin_addr = inet_addr("fd3d:fa7b:d17d::1")}, ...) = 0
