@@ -7,7 +7,7 @@
  * mptcp v0.88
  * Test buffering several packets before sending it.
  * It's done using TCP_CORK flag.
- * It tests if data are sent on different paths with different MSS. 
+ * It tests if data are sent on different paths with different MSS.
  * This test is similar than the tcp_cork_on_08.pkt, only with an opposite order of subflows
  */
 0 `ip tcp_metrics flush`
@@ -33,7 +33,7 @@
 +0  < . 1:1(0) ack 1 win 32792 <mp_join_ack sender_hmac=full_160_hmac(key_a key_b)> sock(5) 
 +0 mp_join_accept(5) = 6
 
-+0 > . 1:1(0) ack 1 <...> sock(6) // reliably mp_join_ack 
++0 > . 1:1(0) ack 1 <...> sock(6) // reliably mp_join_ack
 
 +0 setsockopt(4, SOL_TCP, TCP_CORK, [1], 4) = 0 
 

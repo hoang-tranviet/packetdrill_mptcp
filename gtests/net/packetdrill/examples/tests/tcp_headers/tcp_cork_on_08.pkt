@@ -33,9 +33,9 @@
 +0  < . 1:1(0) ack 1 win 32792 <mp_join_ack sender_hmac=full_160_hmac(key_a key_b)> sock(5) 
 +0 mp_join_accept(5) = 6
 
-+0 > . 1:1(0) ack 1 <...> sock(6) // reliably mp_join_ack 
++0 > . 1:1(0) ack 1 <...> sock(6) // reliably mp_join_ack
 
-+0 setsockopt(4, SOL_TCP, TCP_CORK, [1], 4) = 0 
++0 setsockopt(4, SOL_TCP, TCP_CORK, [1], 4) = 0
 
 +0.1  write(4, ..., 1440) = 1440 
 +0 > P. 1:1441(1440) ack 1 <dss dack4=trunc_r64_hmac(key_a)+1 dsn4=trunc_r64_hmac(key_b)+1 >  sock(6)

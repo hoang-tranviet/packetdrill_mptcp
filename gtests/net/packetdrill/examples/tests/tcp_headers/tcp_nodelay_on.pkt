@@ -1,5 +1,5 @@
 /* mptcp 0.88
- * A simple test using tcp_nodelay from initiator. 
+ * A simple test using tcp_nodelay from initiator.
  * Send 2 small packets (= smaller than mss) and ack each of them
  */
 
