@@ -1,0 +1,32 @@
+
+0	`sysctl net.ipv4.tcp_fastopen=5`
+
++0	socket(..., SOCK_STREAM, IPPROTO_TCP) = 3
+
++0...1	sendto(3, ..., 20, MSG_FASTOPEN, ..., ...) = 20
++0	> S 0:20(20) win 29200 <mss 1460,sackOK,TS val 100 ecr 0,nop,wscale 7,mp_capable a> sock(3)
+
++1	> S 0:0(0) win 29200 <mss 1460,sackOK,TS val 100 ecr 0,nop,wscale 7,mp_capable a> sock(3)
+
++0	< S. 0:0(0) ack 1 win 5792 <mss 1460,sackOK,TS val 700 ecr 100,nop,wscale 7,mp_capable b> sock(3)
+
++0	> . 1:1(0) ack 1 <nop,nop,TS val 100 ecr 700,mp_capable a b, dss dack4=trunc_r64_hmac(b)+1> sock(3)
+
++0	> P. 1:21(20) ack 1 win 229 <nop,nop,TS val 150 ecr 700,dss dack4 dsn4>
++0	< . 1:1(0) ack 21 win 5792 <nop,nop,TS val 700 ecr 150,dss dack4>
+
++0	write(3, ..., 10) = 10
+
++0	> P. 21:31(10) ack 1 win 229 <nop,nop,TS val 150 ecr 700,dss dack4 dsn4>
++0	< . 1:1(0) ack 31 win 5792 <nop,nop,TS val 700 ecr 150,dss dack4>
+
++0	close(3) = 0
++0	> . 31:31(0) ack 1 <nop,nop,TS val 150 ecr 700,dss dack4 dsn4 FIN>
++0	< . 1:1(0) ack 31 win 5792 <nop,nop,TS val 700 ecr 150,dss dack4=trunc_r64_hmac(a)+32 dsn4 FIN>
++0	> F. 31:31(0) ack 1 <nop,nop,TS val 150 ecr 700,dss dack4>
++0	> . 32:32(0) ack 1 <nop,nop,TS val 150 ecr 700,dss dack4>
++0	< F. 1:1(0) ack 32 win 5792 <nop,nop,TS val 700 ecr 150,dss dack4=trunc_r64_hmac(a)+32>
++0	> . 32:32(0) ack 2 <nop,nop,TS val 150 ecr 700,dss dack4>
+
++0	`sysctl net.ipv4.tcp_fastopen=0`
+
