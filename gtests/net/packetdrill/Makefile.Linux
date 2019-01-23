@@ -1,2 +1,2 @@
-packetdrill-ext-libs := -lpthread -lrt -lcrypto -ldl -lz
+packetdrill-ext-libs := -lrt -lcrypto -ldl -lz -lpthread
 include Makefile.common
