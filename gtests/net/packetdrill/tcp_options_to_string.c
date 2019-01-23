@@ -256,47 +256,47 @@ int tcp_options_to_string(struct packet *packet,
         		}else
         			fprintf(s, "mp_capable unknown length");
 
-				fprintf(s, ", flags: ");
-				u8 flags = option->data.mp_capable.flags;
-				if(flags==0){
-					fprintf(s, "| |");
-				}else{
-					if(flags>=128){
-						fprintf(s, "|A");
-						flags = flags-128;
-					}
-					if(flags>=64){
-						fprintf(s, "|B");
-						flags = flags-64;
-					}
-					if(flags>=32){
-						fprintf(s, "|C");
-						flags = flags-32;
-					}
-					if(flags>=16){
-						fprintf(s, "|D");
-						flags = flags-16;
-					}
-					if(flags>=8){
-						fprintf(s, "|E");
-						flags = flags-8;
-					}
-					if(flags>=4){
-						fprintf(s, "|F");
-						flags = flags-4;
-					}
-					if(flags>=2){
-						fprintf(s, "|G");
-						flags = flags-2;
-					}
-					if(flags>=1){
-						fprintf(s, "|H");
-						flags = flags-1;
-					}
-					fprintf(s, "|");
+			fprintf(s, ", flags: ");
+			u8 flags = option->data.mp_capable.flags;
+			if(flags==0){
+				fprintf(s, "| |");
+			}else{
+				if(flags>=128){
+					fprintf(s, "|A");
+					flags = flags-128;
+				}
+				if(flags>=64){
+					fprintf(s, "|B");
+					flags = flags-64;
+				}
+				if(flags>=32){
+					fprintf(s, "|C");
+					flags = flags-32;
+				}
+				if(flags>=16){
+					fprintf(s, "|D");
+					flags = flags-16;
+				}
+				if(flags>=8){
+					fprintf(s, "|E");
+					flags = flags-8;
+				}
+				if(flags>=4){
+					fprintf(s, "|F");
+					flags = flags-4;
+				}
+				if(flags>=2){
+					fprintf(s, "|G");
+					flags = flags-2;
+				}
+				if(flags>=1){
+					fprintf(s, "|H");
+					flags = flags-1;
+				}
+				fprintf(s, "|");
         		}
 
-				break;
+			break;
         	case DSS_SUBTYPE:
         		print_dss_subtype(s, option);
         		break;
